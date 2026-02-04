@@ -1,3 +1,5 @@
+import AuthButton from "../components/AuthButton";
+
 export default function Home() {
   return (
     <div className="min-h-screen bg-base">
@@ -11,9 +13,7 @@ export default function Home() {
           <nav className="flex items-center gap-6 text-sm text-muted">
             <span>Dashboard</span>
             <span>Education</span>
-            <button className="rounded-full bg-ink px-4 py-2 text-white shadow-soft">
-              Sign in with Google
-            </button>
+            <AuthButton />
           </nav>
         </header>
 
