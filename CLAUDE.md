@@ -9,7 +9,7 @@ HSA Paperless is a privacy-first Health Savings Account document tracker. All us
 ## Commands
 
 ```bash
-npm run dev      # Start dev server on localhost:3000
+npm run dev      # Start dev server on localhost:3000 (always use port 3000)
 npm run build    # Production build
 npm run start    # Start production server
 npm run lint     # Run Next.js linting

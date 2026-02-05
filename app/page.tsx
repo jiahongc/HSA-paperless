@@ -12,7 +12,6 @@ type ChartPoint = {
   total: number;
 };
 
-
 const EDUCATION_TOC = [
   { id: "what-is-an-hsa", label: "What is an HSA" },
   { id: "triple-tax-advantage", label: "Triple tax advantage" },
@@ -46,6 +45,19 @@ function formatCurrency(amount: number) {
   });
 }
 
+function sortDocuments(items: Document[]) {
+  return [...items].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function escapeCsvValue(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return "";
+  const stringValue = String(value);
+  if (/["\n,]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, "\"\"")}"`;
+  }
+  return stringValue;
+}
+
 function getYear(date: string) {
   return date.slice(0, 4);
 }
@@ -57,6 +69,7 @@ function getMonthIndex(date: string) {
 
 export default function Home() {
   const { data: session, status } = useSession();
+  const authError = (session as { error?: string } | null)?.error;
   const [activeTab, setActiveTab] = useState<"dashboard" | "education">(
     "dashboard"
   );
@@ -77,6 +90,18 @@ export default function Home() {
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isSavingManual, setIsSavingManual] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isUpdatingDocument, setIsUpdatingDocument] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    merchant: "",
+    category: "",
+    date: "",
+    amount: "",
+    notes: "",
+    reimbursed: false,
+    reimbursedDate: ""
+  });
   const [manualForm, setManualForm] = useState({
     title: "",
     merchant: "",
@@ -101,14 +126,16 @@ export default function Home() {
 
     try {
       const response = await fetch("/api/documents");
+      if (response.status === 401) {
+        setLoadError("Google authorization expired. Please sign out and sign in again.");
+        setDocuments([]);
+        return;
+      }
       if (!response.ok) {
         throw new Error("No documents found.");
       }
       const data = (await response.json()) as DocumentsFile;
-      const sorted = [...(data.documents ?? [])].sort((a, b) =>
-        b.date.localeCompare(a.date)
-      );
-      setDocuments(sorted);
+      setDocuments(sortDocuments(data.documents ?? []));
     } catch {
       setLoadError("No documents found.");
       setDocuments([]);
@@ -129,6 +156,10 @@ export default function Home() {
         method: "POST",
         body: formData
       });
+      if (response.status === 401) {
+        setUploadError("Google authorization expired. Please sign out and sign in again.");
+        return;
+      }
       if (!response.ok) {
         throw new Error("Upload failed");
       }
@@ -178,6 +209,10 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
+      if (response.status === 401) {
+        setManualError("Google authorization expired. Please sign out and sign in again.");
+        return;
+      }
       if (!response.ok) {
         throw new Error("Save failed");
       }
@@ -188,6 +223,207 @@ export default function Home() {
     } finally {
       setIsSavingManual(false);
     }
+  };
+
+  const openDocumentModal = (document: Document) => {
+    setActionError(null);
+    setSelectedDocument(document);
+    setEditForm({
+      title: document.title,
+      merchant: document.merchant,
+      category: document.category,
+      date: document.date,
+      amount: String(document.amount),
+      notes: document.notes,
+      reimbursed: document.reimbursed,
+      reimbursedDate: document.reimbursedDate ?? ""
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleUpdateDocument = async () => {
+    if (!selectedDocument) return;
+    setIsUpdatingDocument(true);
+    setActionError(null);
+
+    try {
+      const resolvedReimbursedDate = editForm.reimbursed
+        ? editForm.reimbursedDate || new Date().toISOString().slice(0, 10)
+        : null;
+      const payload = {
+        title: editForm.title.trim() || "Untitled document",
+        merchant: editForm.merchant.trim(),
+        category: editForm.category.trim(),
+        date: editForm.date,
+        amount: Number(editForm.amount) || 0,
+        notes: editForm.notes.trim(),
+        reimbursed: editForm.reimbursed,
+        reimbursedDate: resolvedReimbursedDate
+      };
+
+      const response = await fetch(`/api/documents/${selectedDocument.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.status === 401) {
+        setActionError("Google authorization expired. Please sign out and sign in again.");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error("Update failed");
+      }
+
+      const updated = (await response.json()) as Document;
+      setDocuments((prev) =>
+        sortDocuments(prev.map((doc) => (doc.id === updated.id ? updated : doc)))
+      );
+      setSelectedDocument(updated);
+      setEditForm({
+        title: updated.title,
+        merchant: updated.merchant,
+        category: updated.category,
+        date: updated.date,
+        amount: String(updated.amount),
+        notes: updated.notes,
+        reimbursed: updated.reimbursed,
+        reimbursedDate: updated.reimbursedDate ?? ""
+      });
+    } catch {
+      setActionError("Update failed. Please try again.");
+    } finally {
+      setIsUpdatingDocument(false);
+    }
+  };
+
+  const handleToggleReimbursed = async (doc: Document) => {
+    setActionError(null);
+    const nextReimbursed = !doc.reimbursed;
+    const nextReimbursedDate = nextReimbursed
+      ? doc.reimbursedDate ?? new Date().toISOString().slice(0, 10)
+      : null;
+
+    try {
+      const response = await fetch(`/api/documents/${doc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reimbursed: nextReimbursed,
+          reimbursedDate: nextReimbursedDate
+        })
+      });
+
+      if (response.status === 401) {
+        setActionError("Google authorization expired. Please sign out and sign in again.");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error("Update failed");
+      }
+
+      const updated = (await response.json()) as Document;
+      setDocuments((prev) =>
+        sortDocuments(prev.map((doc) => (doc.id === updated.id ? updated : doc)))
+      );
+      if (selectedDocument?.id === updated.id) {
+        setSelectedDocument(updated);
+        setEditForm({
+          title: updated.title,
+          merchant: updated.merchant,
+          category: updated.category,
+          date: updated.date,
+          amount: String(updated.amount),
+          notes: updated.notes,
+          reimbursed: updated.reimbursed,
+          reimbursedDate: updated.reimbursedDate ?? ""
+        });
+      }
+    } catch {
+      setActionError("Update failed. Please try again.");
+    }
+  };
+
+  const handleDeleteDocument = async (doc: Document) => {
+    const confirmed = window.confirm(
+      `Delete \"${doc.title}\"? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/documents/${doc.id}`, {
+        method: "DELETE"
+      });
+      if (response.status === 401) {
+        setActionError("Google authorization expired. Please sign out and sign in again.");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error("Delete failed");
+      }
+      setDocuments((prev) => prev.filter((entry) => entry.id !== doc.id));
+      if (selectedDocument?.id === doc.id) {
+        setIsModalOpen(false);
+        setSelectedDocument(null);
+      }
+    } catch {
+      setActionError("Delete failed. Please try again.");
+    }
+  };
+
+  const handleDownloadDocument = (doc: Document) => {
+    if (!doc.hasFile) return;
+    const link = window.document.createElement("a");
+    link.href = `/api/documents/download/${doc.id}`;
+    link.download = doc.filename ?? "document";
+    window.document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleExportCsv = () => {
+    if (!filteredDocuments.length) return;
+    const headers = [
+      "Title",
+      "Merchant",
+      "Category",
+      "Date",
+      "Amount",
+      "Reimbursed",
+      "Reimbursed Date",
+      "Notes",
+      "Has File",
+      "Filename"
+    ];
+
+    const rows = filteredDocuments.map((doc) => [
+      escapeCsvValue(doc.title),
+      escapeCsvValue(doc.merchant),
+      escapeCsvValue(doc.category),
+      escapeCsvValue(doc.date),
+      escapeCsvValue(doc.amount),
+      escapeCsvValue(doc.reimbursed ? "Yes" : "No"),
+      escapeCsvValue(doc.reimbursedDate ?? ""),
+      escapeCsvValue(doc.notes),
+      escapeCsvValue(doc.hasFile ? "Yes" : "No"),
+      escapeCsvValue(doc.filename ?? "")
+    ]);
+
+    const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join(
+      "\n"
+    );
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `hsa-documents-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
@@ -287,6 +523,12 @@ export default function Home() {
     ...activeSeries.map((point) => point.total),
     1
   );
+  const previewUrl = selectedDocument?.hasFile
+    ? `/api/documents/file/${selectedDocument.id}`
+    : "";
+  const isPreviewPdf = selectedDocument?.filename
+    ? selectedDocument.filename.toLowerCase().endsWith(".pdf")
+    : false;
 
   if (status === "loading") {
     return (
@@ -369,6 +611,11 @@ export default function Home() {
         </header>
 
         <main className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-20 pt-10">
+          {authError ? (
+            <div className="mb-6 rounded-2xl border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-ink">
+              Google authorization expired. Please sign out and sign in again.
+            </div>
+          ) : null}
           {activeTab === "dashboard" ? (
             <div className="space-y-8">
               <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
@@ -554,7 +801,11 @@ export default function Home() {
                       onChange={(event) => setSearch(event.target.value)}
                       className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm"
                     />
-                    <button className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">
+                    <button
+                      className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                      onClick={handleExportCsv}
+                      disabled={filteredDocuments.length === 0}
+                    >
                       Export CSV
                     </button>
                   </div>
@@ -603,34 +854,39 @@ export default function Home() {
                               {formatCurrency(document.amount)}
                             </td>
                             <td className="px-4 py-3">
-                              <span
-                                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              <button
+                                type="button"
+                                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                                   document.reimbursed
                                     ? "bg-sage/20 text-ink"
                                     : "bg-coral/20 text-ink"
                                 }`}
+                                title="Toggle reimbursed status"
+                                onClick={() => handleToggleReimbursed(document)}
+                                aria-pressed={document.reimbursed}
                               >
                                 {document.reimbursed ? "Reimbursed" : "Paid out of pocket"}
-                              </span>
+                              </button>
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 <button
                                   className="rounded-full border border-ink/10 px-3 py-1 text-xs"
-                                  onClick={() => {
-                                    setSelectedDocument(document);
-                                    setIsModalOpen(true);
-                                  }}
+                                  onClick={() => openDocumentModal(document)}
                                 >
                                   View
                                 </button>
                                 <button
                                   className="rounded-full border border-ink/10 px-3 py-1 text-xs disabled:opacity-40"
                                   disabled={!document.hasFile}
+                                  onClick={() => handleDownloadDocument(document)}
                                 >
                                   Download
                                 </button>
-                                <button className="rounded-full border border-ink/10 px-3 py-1 text-xs">
+                                <button
+                                  className="rounded-full border border-ink/10 px-3 py-1 text-xs"
+                                  onClick={() => handleDeleteDocument(document)}
+                                >
                                   Delete
                                 </button>
                               </div>
@@ -641,6 +897,9 @@ export default function Home() {
                     </tbody>
                   </table>
                 </div>
+                {actionError ? (
+                  <p className="mt-3 text-xs text-coral">{actionError}</p>
+                ) : null}
               </section>
             </div>
           ) : (
@@ -1113,27 +1372,166 @@ export default function Home() {
                 Close
               </button>
             </div>
-            <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="h-64 rounded-2xl bg-surface" />
-              <div className="space-y-3 text-sm">
+            <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="flex h-72 items-center justify-center rounded-2xl bg-surface">
+                {selectedDocument.hasFile ? (
+                  isPreviewPdf ? (
+                    <object
+                      data={previewUrl}
+                      type="application/pdf"
+                      className="h-full w-full rounded-2xl"
+                    >
+                      <iframe
+                        src={previewUrl}
+                        title={selectedDocument.title}
+                        className="h-full w-full rounded-2xl"
+                      />
+                    </object>
+                  ) : (
+                    <img
+                      src={previewUrl}
+                      alt={selectedDocument.title}
+                      className="h-full w-full rounded-2xl object-contain"
+                    />
+                  )
+                ) : (
+                  <div className="text-sm text-muted">No document file attached.</div>
+                )}
+              </div>
+              <div className="space-y-4 text-sm">
+                {actionError ? (
+                  <div className="rounded-2xl border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-ink">
+                    {actionError}
+                  </div>
+                ) : null}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                    Document details
+                  </p>
+                  <button
+                    className="rounded-full border border-ink/10 px-3 py-1 text-xs disabled:opacity-40"
+                    onClick={() => handleDownloadDocument(selectedDocument)}
+                    disabled={!selectedDocument.hasFile}
+                  >
+                    Download
+                  </button>
+                </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.2em] text-muted">Title</p>
-                  <p className="mt-1 font-semibold">{selectedDocument.title}</p>
+                  <input
+                    className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
+                    value={editForm.title}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({ ...prev, title: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Merchant</p>
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
+                      value={editForm.merchant}
+                      onChange={(event) =>
+                        setEditForm((prev) => ({ ...prev, merchant: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Category</p>
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
+                      value={editForm.category}
+                      onChange={(event) =>
+                        setEditForm((prev) => ({ ...prev, category: event.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Date</p>
+                    <input
+                      type="date"
+                      className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
+                      value={editForm.date}
+                      onChange={(event) =>
+                        setEditForm((prev) => ({ ...prev, date: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Amount</p>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
+                      value={editForm.amount}
+                      onChange={(event) =>
+                        setEditForm((prev) => ({ ...prev, amount: event.target.value }))
+                      }
+                    />
+                  </div>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted">Merchant</p>
-                  <p className="mt-1">{selectedDocument.merchant}</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">Notes</p>
+                  <textarea
+                    className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
+                    rows={3}
+                    value={editForm.notes}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({ ...prev, notes: event.target.value }))
+                    }
+                  />
                 </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted">Amount</p>
-                  <p className="mt-1">{formatCurrency(selectedDocument.amount)}</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex items-center gap-2 text-sm text-muted">
+                    <input
+                      type="checkbox"
+                      checked={editForm.reimbursed}
+                      onChange={(event) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          reimbursed: event.target.checked
+                        }))
+                      }
+                    />
+                    Reimbursed
+                  </label>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                      Reimbursed date
+                    </p>
+                    <input
+                      type="date"
+                      className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
+                      value={editForm.reimbursedDate}
+                      onChange={(event) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          reimbursedDate: event.target.value
+                        }))
+                      }
+                      disabled={!editForm.reimbursed}
+                    />
+                  </div>
                 </div>
-                <button
-                  className="mt-4 w-full rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-                  disabled={!selectedDocument.hasFile}
-                >
-                  Download document
-                </button>
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    className="rounded-full border border-ink/10 px-4 py-2 text-sm"
+                    onClick={() => setIsModalOpen(false)}
+                  >
+                    Close
+                  </button>
+                  <button
+                    className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                    onClick={handleUpdateDocument}
+                    disabled={isUpdatingDocument}
+                  >
+                    {isUpdatingDocument ? "Saving..." : "Save changes"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

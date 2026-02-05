@@ -158,3 +158,27 @@ export async function uploadDocumentFile(
     filename: created.data.name as string
   };
 }
+
+export async function getDocumentFile(accessToken: string, fileId: string) {
+  const drive = getDrive(accessToken);
+  const metadata = await drive.files.get({
+    fileId,
+    fields: "name, mimeType"
+  });
+
+  const response = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer" }
+  );
+
+  return {
+    filename: metadata.data.name ?? "document",
+    mimeType: metadata.data.mimeType ?? "application/octet-stream",
+    buffer: Buffer.from(response.data as ArrayBuffer)
+  };
+}
+
+export async function deleteDocumentFile(accessToken: string, fileId: string) {
+  const drive = getDrive(accessToken);
+  await drive.files.delete({ fileId });
+}
