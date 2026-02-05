@@ -10,13 +10,15 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
+    "googleapis": "^140.0.0",
     "next": "^14.2.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
     "next-auth": "^4.24.5",
-    "googleapis": "^140.0.0"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",

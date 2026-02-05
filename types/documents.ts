@@ -3,8 +3,8 @@ export type Document = {
   fileId: string | null;
   filename: string | null;
   hasFile: boolean;
+  user: string;
   title: string;
-  merchant: string;
   category: string;
   date: string;
   amount: number;

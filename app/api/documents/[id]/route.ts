@@ -12,8 +12,8 @@ import type { Document } from "../../../../types/documents";
 type DocumentUpdates = Partial<
   Pick<
     Document,
+    | "user"
     | "title"
-    | "merchant"
     | "category"
     | "date"
     | "amount"
@@ -26,11 +26,11 @@ type DocumentUpdates = Partial<
 function sanitizeUpdates(body: Partial<Document>) {
   const updates: DocumentUpdates = {};
 
+  if (typeof body.user === "string") {
+    updates.user = body.user.trim();
+  }
   if (typeof body.title === "string") {
     updates.title = body.title.trim() || "Untitled document";
-  }
-  if (typeof body.merchant === "string") {
-    updates.merchant = body.merchant.trim();
   }
   if (typeof body.category === "string") {
     updates.category = body.category.trim();

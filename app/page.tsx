@@ -5,37 +5,25 @@ import { useSession } from "next-auth/react";
 import AuthButton from "../components/AuthButton";
 import type { Document, DocumentsFile } from "../types/documents";
 
-type ChartPoint = {
-  label: string;
-  reimbursed: number;
-  pending: number;
-  total: number;
-};
-
-const EDUCATION_TOC = [
+const ABOUT_HSA_TOC = [
   { id: "what-is-an-hsa", label: "What is an HSA" },
   { id: "triple-tax-advantage", label: "Triple tax advantage" },
   { id: "investing", label: "Investing your HSA" },
   { id: "reimburse-later", label: "Reimburse later" },
   { id: "qualified-expenses", label: "Qualified expenses" },
   { id: "documents", label: "Documents" },
-  { id: "why-dashboard", label: "Why this dashboard exists" },
   { id: "best-practices", label: "Best practices" }
 ];
 
-const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec"
+const CATEGORIES = [
+  "Medical",
+  "Dental",
+  "Vision",
+  "Pharmacy",
+  "Lab/Test",
+  "Mental Health",
+  "Physical Therapy",
+  "Other"
 ];
 
 function formatCurrency(amount: number) {
@@ -49,6 +37,12 @@ function sortDocuments(items: Document[]) {
   return [...items].sort((a, b) => b.date.localeCompare(a.date));
 }
 
+function getFirstName(fullName: string | null | undefined): string {
+  if (!fullName) return "";
+  const parts = fullName.trim().split(/\s+/);
+  return parts[0] || "";
+}
+
 function escapeCsvValue(value: string | number | null | undefined) {
   if (value === null || value === undefined) return "";
   const stringValue = String(value);
@@ -58,25 +52,12 @@ function escapeCsvValue(value: string | number | null | undefined) {
   return stringValue;
 }
 
-function getYear(date: string) {
-  return date.slice(0, 4);
-}
-
-function getMonthIndex(date: string) {
-  const month = Number(date.slice(5, 7));
-  return Number.isNaN(month) ? 0 : Math.max(1, Math.min(12, month)) - 1;
-}
-
 export default function Home() {
   const { data: session, status } = useSession();
   const authError = (session as { error?: string } | null)?.error;
-  const [activeTab, setActiveTab] = useState<"dashboard" | "education">(
+  const [activeTab, setActiveTab] = useState<"dashboard" | "about" | "qa">(
     "dashboard"
   );
-  const [chartMode, setChartMode] = useState<"yearly" | "monthly">(
-    "yearly"
-  );
-  const [selectedYear, setSelectedYear] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -87,14 +68,16 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadedCount, setUploadedCount] = useState(0);
+  const [uploadTotal, setUploadTotal] = useState(0);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isSavingManual, setIsSavingManual] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isUpdatingDocument, setIsUpdatingDocument] = useState(false);
   const [editForm, setEditForm] = useState({
+    user: "",
     title: "",
-    merchant: "",
     category: "",
     date: "",
     amount: "",
@@ -103,8 +86,8 @@ export default function Home() {
     reimbursedDate: ""
   });
   const [manualForm, setManualForm] = useState({
+    user: "",
     title: "",
-    merchant: "",
     category: "",
     date: new Date().toISOString().slice(0, 10),
     amount: "",
@@ -148,6 +131,8 @@ export default function Home() {
     if (!queuedFiles.length) return;
     setIsUploading(true);
     setUploadError(null);
+    setUploadedCount(0);
+    setUploadTotal(queuedFiles.length);
 
     try {
       const formData = new FormData();
@@ -163,9 +148,14 @@ export default function Home() {
       if (!response.ok) {
         throw new Error("Upload failed");
       }
+      const result = (await response.json()) as { entries: Document[] };
       setQueuedFiles([]);
       await loadDocuments();
-    } catch (error) {
+
+      if (result.entries.length > 0) {
+        openDocumentModal(result.entries[0]);
+      }
+    } catch {
       setUploadError("Upload failed. Please try again.");
     } finally {
       setIsUploading(false);
@@ -175,8 +165,8 @@ export default function Home() {
   const openManualEntry = () => {
     setManualError(null);
     setManualForm({
+      user: getFirstName(session?.user?.name),
       title: "",
-      merchant: "",
       category: "",
       date: new Date().toISOString().slice(0, 10),
       amount: "",
@@ -192,8 +182,8 @@ export default function Home() {
     setManualError(null);
     try {
       const payload = {
+        user: manualForm.user.trim(),
         title: manualForm.title.trim() || "Untitled document",
-        merchant: manualForm.merchant.trim(),
         category: manualForm.category.trim(),
         date: manualForm.date,
         amount: Number(manualForm.amount) || 0,
@@ -229,8 +219,8 @@ export default function Home() {
     setActionError(null);
     setSelectedDocument(document);
     setEditForm({
+      user: document.user ?? "",
       title: document.title,
-      merchant: document.merchant,
       category: document.category,
       date: document.date,
       amount: String(document.amount),
@@ -251,8 +241,8 @@ export default function Home() {
         ? editForm.reimbursedDate || new Date().toISOString().slice(0, 10)
         : null;
       const payload = {
+        user: editForm.user.trim(),
         title: editForm.title.trim() || "Untitled document",
-        merchant: editForm.merchant.trim(),
         category: editForm.category.trim(),
         date: editForm.date,
         amount: Number(editForm.amount) || 0,
@@ -279,17 +269,8 @@ export default function Home() {
       setDocuments((prev) =>
         sortDocuments(prev.map((doc) => (doc.id === updated.id ? updated : doc)))
       );
-      setSelectedDocument(updated);
-      setEditForm({
-        title: updated.title,
-        merchant: updated.merchant,
-        category: updated.category,
-        date: updated.date,
-        amount: String(updated.amount),
-        notes: updated.notes,
-        reimbursed: updated.reimbursed,
-        reimbursedDate: updated.reimbursedDate ?? ""
-      });
+      setIsModalOpen(false);
+      setSelectedDocument(null);
     } catch {
       setActionError("Update failed. Please try again.");
     } finally {
@@ -329,8 +310,8 @@ export default function Home() {
       if (selectedDocument?.id === updated.id) {
         setSelectedDocument(updated);
         setEditForm({
+          user: updated.user ?? "",
           title: updated.title,
-          merchant: updated.merchant,
           category: updated.category,
           date: updated.date,
           amount: String(updated.amount),
@@ -346,7 +327,7 @@ export default function Home() {
 
   const handleDeleteDocument = async (doc: Document) => {
     const confirmed = window.confirm(
-      `Delete \"${doc.title}\"? This cannot be undone.`
+      `Delete "${doc.title}"? This cannot be undone.`
     );
     if (!confirmed) return;
 
@@ -385,8 +366,8 @@ export default function Home() {
   const handleExportCsv = () => {
     if (!filteredDocuments.length) return;
     const headers = [
+      "User",
       "Title",
-      "Merchant",
       "Category",
       "Date",
       "Amount",
@@ -398,8 +379,8 @@ export default function Home() {
     ];
 
     const rows = filteredDocuments.map((doc) => [
+      escapeCsvValue(doc.user ?? ""),
       escapeCsvValue(doc.title),
-      escapeCsvValue(doc.merchant),
       escapeCsvValue(doc.category),
       escapeCsvValue(doc.date),
       escapeCsvValue(doc.amount),
@@ -426,6 +407,47 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportDocuments = async () => {
+    try {
+      const response = await fetch("/api/documents/export");
+      if (!response.ok) {
+        throw new Error("Export failed");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "HSA_Documents.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to export documents", error);
+      setActionError("Failed to export documents. Please try again.");
+    }
+  };
+
+  const handleClearAllDocuments = async () => {
+    const confirmed = window.confirm(
+      `Delete all ${documents.length} documents? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setActionError(null);
+    try {
+      for (const doc of documents) {
+        await fetch(`/api/documents/${doc.id}`, { method: "DELETE" });
+      }
+      setDocuments([]);
+      setIsModalOpen(false);
+      setSelectedDocument(null);
+    } catch (error) {
+      console.error("Failed to clear documents", error);
+      setActionError("Failed to clear all documents. Please try again.");
+    }
+  };
+
   useEffect(() => {
     if (!session) {
       setDocuments([]);
@@ -441,8 +463,8 @@ export default function Home() {
     const query = search.toLowerCase();
     return documents.filter((document) => {
       return [
+        document.user ?? "",
         document.title,
-        document.merchant,
         document.category,
         document.notes,
         document.filename ?? ""
@@ -465,64 +487,16 @@ export default function Home() {
     };
   }, [documents]);
 
-  const years = useMemo(() => {
-    const found = new Set(documents.map((document) => getYear(document.date)));
-    const currentYear = String(new Date().getFullYear());
-    found.add(currentYear);
-    return Array.from(found).sort();
-  }, [documents]);
-
-  useEffect(() => {
-    if (!years.length) return;
-    if (!selectedYear || !years.includes(selectedYear)) {
-      setSelectedYear(years[years.length - 1]);
-    }
-  }, [selectedYear, years]);
-
-  const yearlySeries = useMemo<ChartPoint[]>(() => {
-    return years.map((year) => {
-      const yearDocuments = documents.filter((document) => getYear(document.date) === year);
-      const reimbursed = yearDocuments
-        .filter((document) => document.reimbursed)
-        .reduce((sum, document) => sum + document.amount, 0);
-      const total = yearDocuments.reduce((sum, document) => sum + document.amount, 0);
-      return {
-        label: year,
-        reimbursed,
-        pending: total - reimbursed,
-        total
-      };
+  const availableUsers = useMemo(() => {
+    const users = new Set<string>();
+    const lastName = getFirstName(session?.user?.name);
+    if (lastName) users.add(lastName);
+    documents.forEach((doc) => {
+      if (doc.user?.trim()) users.add(doc.user.trim());
     });
-  }, [documents, years]);
+    return Array.from(users).sort();
+  }, [documents, session?.user?.name]);
 
-  const monthlySeries = useMemo<ChartPoint[]>(() => {
-    if (!selectedYear) return [];
-    const base = MONTH_LABELS.map((label) => ({
-      label,
-      reimbursed: 0,
-      pending: 0,
-      total: 0
-    }));
-    documents
-      .filter((document) => getYear(document.date) === selectedYear)
-      .forEach((document) => {
-        const monthIndex = getMonthIndex(document.date);
-        const target = base[monthIndex];
-        target.total += document.amount;
-        if (document.reimbursed) {
-          target.reimbursed += document.amount;
-        } else {
-          target.pending += document.amount;
-        }
-      });
-    return base;
-  }, [documents, selectedYear]);
-
-  const activeSeries = chartMode === "yearly" ? yearlySeries : monthlySeries;
-  const maxValue = Math.max(
-    ...activeSeries.map((point) => point.total),
-    1
-  );
   const previewUrl = selectedDocument?.hasFile
     ? `/api/documents/file/${selectedDocument.id}`
     : "";
@@ -593,13 +567,23 @@ export default function Home() {
             </button>
             <button
               className={`rounded-full px-4 py-2 ${
-                activeTab === "education"
+                activeTab === "about"
                   ? "bg-ink text-white"
                   : "text-muted"
               }`}
-              onClick={() => setActiveTab("education")}
+              onClick={() => setActiveTab("about")}
             >
-              Education
+              About HSA
+            </button>
+            <button
+              className={`rounded-full px-4 py-2 ${
+                activeTab === "qa"
+                  ? "bg-ink text-white"
+                  : "text-muted"
+              }`}
+              onClick={() => setActiveTab("qa")}
+            >
+              Q&A
             </button>
           </nav>
           <div className="flex items-center gap-3">
@@ -646,12 +630,17 @@ export default function Home() {
                         disabled={queuedFiles.length === 0 || isUploading}
                         onClick={handleUpload}
                       >
-                        {isUploading ? "Uploading..." : "Upload"}
+                        {isUploading
+                          ? `Uploading ${uploadTotal} file${uploadTotal === 1 ? "" : "s"}...`
+                          : "Upload"}
                       </button>
                       <button
                         className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
                         disabled={queuedFiles.length === 0}
-                        onClick={() => setQueuedFiles([])}
+                        onClick={() => {
+                          setQueuedFiles([]);
+                          setUploadError(null);
+                        }}
                       >
                         Clear
                       </button>
@@ -701,7 +690,7 @@ export default function Home() {
                     <p className="mt-3 text-3xl font-semibold">
                       {formatCurrency(totals.total)}
                     </p>
-                    <p className="mt-2 text-sm text-muted">Across all documents</p>
+                    <p className="mt-2 text-sm text-muted">&nbsp;</p>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="rounded-3xl bg-white/80 p-5 shadow-soft">
@@ -714,7 +703,7 @@ export default function Home() {
                     </div>
                     <div className="rounded-3xl bg-white/80 p-5 shadow-soft">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        Paid out of pocket
+                        Not reimbursed
                       </p>
                       <p className="mt-3 text-2xl font-semibold">
                         {formatCurrency(totals.pending)}
@@ -727,71 +716,7 @@ export default function Home() {
               <section className="rounded-3xl bg-white/80 p-6 shadow-soft backdrop-blur">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <h3 className="font-serif text-2xl">Spend Dashboard</h3>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex rounded-full bg-base p-1 text-sm">
-                      <button
-                        className={`rounded-full px-4 py-2 ${
-                          chartMode === "yearly" ? "bg-ink text-white" : "text-muted"
-                        }`}
-                        onClick={() => setChartMode("yearly")}
-                      >
-                        Yearly
-                      </button>
-                      <button
-                        className={`rounded-full px-4 py-2 ${
-                          chartMode === "monthly" ? "bg-ink text-white" : "text-muted"
-                        }`}
-                        onClick={() => setChartMode("monthly")}
-                      >
-                        Monthly
-                      </button>
-                    </div>
-                    {chartMode === "monthly" ? (
-                      <select
-                        className="rounded-full border border-ink/10 bg-white px-3 py-2 text-sm"
-                        value={selectedYear}
-                        onChange={(event) => setSelectedYear(event.target.value)}
-                      >
-                        {years.map((year) => (
-                          <option key={year} value={year}>
-                            {year}
-                          </option>
-                        ))}
-                      </select>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="mt-6">
-                  <div className="h-52 rounded-2xl bg-surface p-4">
-                    <div className="flex h-full items-end gap-3">
-                      {activeSeries.map((point) => (
-                        <div
-                          key={point.label}
-                          className="flex h-full flex-1 flex-col justify-end gap-2"
-                        >
-                          <div
-                            className="rounded-2xl bg-sage/60"
-                            style={{ height: `${(point.reimbursed / maxValue) * 100}%` }}
-                          />
-                          <div
-                            className="rounded-2xl bg-coral/70"
-                            style={{ height: `${(point.pending / maxValue) * 100}%` }}
-                          />
-                          <p className="pt-2 text-center text-xs text-muted">{point.label}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-3xl bg-white/80 p-6 shadow-soft backdrop-blur">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Documents</p>
-                    <h3 className="mt-2 font-serif text-2xl">All documents</h3>
+                    <h3 className="font-serif text-2xl">Documents</h3>
                   </div>
                   <div className="flex items-center gap-3">
                     <input
@@ -802,21 +727,35 @@ export default function Home() {
                       className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm"
                     />
                     <button
-                      className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                      className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
                       onClick={handleExportCsv}
                       disabled={filteredDocuments.length === 0}
                     >
                       Export CSV
                     </button>
+                    <button
+                      className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
+                      onClick={handleExportDocuments}
+                      disabled={documents.filter((d) => d.hasFile).length === 0}
+                    >
+                      Export Files
+                    </button>
+                    <button
+                      className="rounded-full border border-coral/30 bg-white px-4 py-2 text-sm font-semibold text-coral disabled:opacity-40"
+                      onClick={handleClearAllDocuments}
+                      disabled={documents.length === 0}
+                    >
+                      Clear All
+                    </button>
                   </div>
                 </div>
 
-                <div className="mt-6 overflow-hidden rounded-2xl border border-ink/10">
-                  <table className="min-w-full text-sm">
+                <div className="mt-6 overflow-x-auto rounded-2xl border border-ink/10">
+                  <table className="min-w-[700px] w-full text-sm">
                     <thead className="bg-base text-left text-xs uppercase tracking-[0.2em] text-muted">
                       <tr>
                         <th className="px-4 py-3">Title</th>
-                        <th className="px-4 py-3">Merchant</th>
+                        <th className="px-4 py-3">User</th>
                         <th className="px-4 py-3">Category</th>
                         <th className="px-4 py-3">Date</th>
                         <th className="px-4 py-3">Amount</th>
@@ -839,15 +778,19 @@ export default function Home() {
                         </tr>
                       ) : filteredDocuments.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-6 text-center text-muted">
-                            No documents found.
+                          <td colSpan={7} className="px-4 py-10 text-center">
+                            <p className="text-muted">
+                              {search
+                                ? "No documents match your search."
+                                : "No documents yet. Upload a receipt or add a manual entry to get started."}
+                            </p>
                           </td>
                         </tr>
                       ) : (
                         filteredDocuments.map((document) => (
                           <tr key={document.id} className="hover:bg-base/70">
                             <td className="px-4 py-3 font-medium">{document.title}</td>
-                            <td className="px-4 py-3 text-muted">{document.merchant}</td>
+                            <td className="px-4 py-3 text-muted">{document.user}</td>
                             <td className="px-4 py-3 text-muted">{document.category}</td>
                             <td className="px-4 py-3 text-muted">{document.date}</td>
                             <td className="px-4 py-3">
@@ -865,7 +808,7 @@ export default function Home() {
                                 onClick={() => handleToggleReimbursed(document)}
                                 aria-pressed={document.reimbursed}
                               >
-                                {document.reimbursed ? "Reimbursed" : "Paid out of pocket"}
+                                {document.reimbursed ? "Reimbursed" : "Not reimbursed"}
                               </button>
                             </td>
                             <td className="px-4 py-3">
@@ -902,9 +845,9 @@ export default function Home() {
                 ) : null}
               </section>
             </div>
-          ) : (
+          ) : activeTab === "about" ? (
             <section className="rounded-3xl bg-white/80 p-8 shadow-soft backdrop-blur">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted">HSA Education</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted">About HSA</p>
               <h2 className="mt-3 font-serif text-3xl">How to use your HSA confidently</h2>
               <p className="mt-4 text-muted">
                 A Health Savings Account is one of the most powerful financial tools available.
@@ -912,53 +855,27 @@ export default function Home() {
                 many people choose to reimburse later.
               </p>
 
-              <div className="mt-6 rounded-2xl bg-base p-5 text-sm text-muted">
-                <p className="text-xs uppercase tracking-[0.2em] text-ink">At a glance</p>
-                <ul className="mt-3 list-disc space-y-2 pl-5">
-                  <li>
-                    Who this is for. HSA power users, people paying out of pocket, and FIRE and tax
-                    optimization minded users.
-                  </li>
-                  <li>
-                    Main benefit. Keep HSA funds invested while tracking proof for reimburse later
-                    decisions.
-                  </li>
-                  <li>
-                    What this dashboard does. Track documents, show unreimbursed totals, and support
-                    the reimburse later strategy with files stored in your own Google Drive.
-                  </li>
-                </ul>
-              </div>
-
-              <div className="mt-6 rounded-2xl border border-ink/10 bg-white p-5 text-sm text-muted">
-                <p className="text-xs uppercase tracking-[0.2em] text-ink">
-                  2026 contribution limits
-                </p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl bg-base px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Individual</p>
-                    <p className="mt-1 text-lg font-semibold text-ink">$4,400</p>
-                  </div>
-                  <div className="rounded-2xl bg-base px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Couple or family</p>
-                    <p className="mt-1 text-lg font-semibold text-ink">$8,750</p>
-                  </div>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-base p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">2026 Individual limit</p>
+                  <p className="mt-1 text-lg font-semibold text-ink">$4,400</p>
+                </div>
+                <div className="rounded-2xl bg-base p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">2026 Family limit</p>
+                  <p className="mt-1 text-lg font-semibold text-ink">$8,750</p>
                 </div>
               </div>
 
-              <div className="mt-8 rounded-2xl bg-white p-4 text-sm text-muted">
-                <p className="text-xs uppercase tracking-[0.2em] text-ink">Jump to</p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  {EDUCATION_TOC.map((item) => (
-                    <a
-                      key={item.id}
-                      href={`#${item.id}`}
-                      className="rounded-full border border-ink/10 bg-base px-4 py-1 text-xs text-ink"
-                    >
-                      {item.label}
-                    </a>
-                  ))}
-                </div>
+              <div className="mt-6 flex flex-wrap gap-2">
+                {ABOUT_HSA_TOC.map((item) => (
+                  <a
+                    key={item.id}
+                    href={`#${item.id}`}
+                    className="rounded-full bg-base px-3 py-1 text-xs text-ink"
+                  >
+                    {item.label}
+                  </a>
+                ))}
               </div>
 
               <div className="mt-8 space-y-10 text-sm text-muted">
@@ -1054,11 +971,11 @@ export default function Home() {
                     Delaying reimbursement allows your HSA to function as a long term investment
                     account.
                   </p>
-                  <div className="rounded-2xl bg-white p-4 text-sm text-muted">
+                  <div className="rounded-2xl bg-base p-4 text-sm">
                     <p className="text-xs uppercase tracking-[0.2em] text-ink">
                       Example timeline
                     </p>
-                    <ul className="mt-3 list-disc space-y-2 pl-5">
+                    <ul className="mt-3 list-disc space-y-2 pl-5 text-muted">
                       <li>Year 0. You pay a $1,000 medical bill out of pocket.</li>
                       <li>Year 15. Your HSA grows to $4,000.</li>
                       <li>You reimburse $1,000 tax free.</li>
@@ -1069,29 +986,12 @@ export default function Home() {
 
                 <section className="space-y-3">
                   <h3 className="text-lg font-semibold text-ink">How reimbursements work</h3>
-                  <ol className="space-y-3 text-sm">
-                    <li className="rounded-2xl bg-base p-4">
-                      <p className="font-semibold text-ink">1. Pay a qualified expense out of pocket</p>
-                    </li>
-                    <li className="rounded-2xl bg-base p-4">
-                      <p className="font-semibold text-ink">2. Save the document</p>
-                    </li>
-                    <li className="rounded-2xl bg-base p-4">
-                      <p className="font-semibold text-ink">
-                        3. Upload and track it in your dashboard
-                      </p>
-                      <p className="mt-2 text-xs text-muted">
-                        This is where HSA Paperless helps. Upload, tag, and store securely in Drive.
-                      </p>
-                    </li>
-                    <li className="rounded-2xl bg-base p-4">
-                      <p className="font-semibold text-ink">
-                        4. When ready, withdraw the same amount from your HSA
-                      </p>
-                    </li>
-                    <li className="rounded-2xl bg-base p-4">
-                      <p className="font-semibold text-ink">5. Mark the document as reimbursed</p>
-                    </li>
+                  <ol className="list-decimal space-y-2 pl-5">
+                    <li>Pay a qualified expense out of pocket</li>
+                    <li>Save the document</li>
+                    <li>Upload and track it in your dashboard</li>
+                    <li>When ready, withdraw the same amount from your HSA</li>
+                    <li>Mark the document as reimbursed</li>
                   </ol>
                   <p>You can reimburse next month, next year, or decades later.</p>
                 </section>
@@ -1156,7 +1056,29 @@ export default function Home() {
                   </div>
                 </section>
 
-                <section id="why-dashboard" className="space-y-3">
+                <section id="best-practices" className="space-y-3">
+                  <h3 className="text-lg font-semibold text-ink">Best practices</h3>
+                  <ul className="list-disc space-y-2 pl-5">
+                    <li>Pay medical expenses out of pocket when possible</li>
+                    <li>Upload documents immediately</li>
+                    <li>Invest your HSA for long term growth</li>
+                    <li>Reimburse strategically, not impulsively</li>
+                    <li>Keep records indefinitely</li>
+                  </ul>
+                </section>
+              </div>
+            </section>
+          ) : (
+            <section className="rounded-3xl bg-white/80 p-8 shadow-soft backdrop-blur">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted">Q&A</p>
+              <h2 className="mt-3 font-serif text-3xl">Dashboard and common questions</h2>
+              <p className="mt-4 text-muted">
+                Learn about how this dashboard works, where your data is stored, and answers to
+                frequently asked questions.
+              </p>
+
+              <div className="mt-8 space-y-10 text-sm text-muted">
+                <section className="space-y-3">
                   <h3 className="text-lg font-semibold text-ink">Why this dashboard exists</h3>
                   <ul className="list-disc space-y-2 pl-5">
                     <li>Track expenses as you spend</li>
@@ -1167,24 +1089,25 @@ export default function Home() {
                     <li>Know exactly how much you can reimburse tax free at any time</li>
                     <li>See your unreimbursed balance in one place</li>
                   </ul>
+                </section>
+
+                <section className="space-y-3">
+                  <h3 className="text-lg font-semibold text-ink">Privacy and data storage</h3>
                   <div className="rounded-2xl bg-base p-4 text-ink">
                     <p className="text-xs uppercase tracking-[0.2em]">Privacy first design</p>
                     <p className="mt-2">
                       Your documents and files stay in your own Google Drive. You retain full
                       ownership of your data.
                     </p>
+                    <p className="mt-3 text-xs uppercase tracking-[0.2em]">Where files are stored</p>
+                    <p className="mt-2 text-sm text-muted">
+                      Files are stored in a hidden app data folder in your Google Drive that only
+                      this app can access. The metadata file (documents.json) and uploaded files
+                      are organized by month in a &quot;documents&quot; folder within this app data space.
+                      This folder is not visible in your regular Drive interface but is included
+                      in your Google account storage quota.
+                    </p>
                   </div>
-                </section>
-
-                <section id="best-practices" className="space-y-3">
-                  <h3 className="text-lg font-semibold text-ink">Best practices</h3>
-                  <ul className="list-disc space-y-2 pl-5">
-                    <li>Pay medical expenses out of pocket when possible</li>
-                    <li>Upload documents immediately</li>
-                    <li>Invest your HSA for long term growth</li>
-                    <li>Reimburse strategically, not impulsively</li>
-                    <li>Keep records indefinitely</li>
-                  </ul>
                 </section>
 
                 <section className="space-y-3">
@@ -1220,8 +1143,23 @@ export default function Home() {
                   </div>
                 </section>
 
-                <section className="rounded-2xl bg-ink p-5 text-center text-sm text-white">
-                  Connect your Google Drive to start tracking documents in under 2 minutes.
+                <section className="flex items-center justify-center gap-2 pt-4 text-sm text-muted">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="currentColor"
+                  >
+                    <path d="M12 1.5C6.48 1.5 2 5.98 2 11.5c0 4.42 2.87 8.17 6.84 9.49.5.09.68-.22.68-.48 0-.24-.01-.88-.01-1.73-2.78.6-3.37-1.34-3.37-1.34-.46-1.17-1.12-1.48-1.12-1.48-.91-.62.07-.6.07-.6 1.01.07 1.54 1.04 1.54 1.04.9 1.55 2.36 1.1 2.94.84.09-.65.35-1.1.64-1.35-2.22-.25-4.56-1.11-4.56-4.96 0-1.1.39-2 1.03-2.71-.1-.25-.45-1.28.1-2.66 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.8c.85 0 1.71.12 2.51.35 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.41.1 2.66.64.71 1.03 1.61 1.03 2.71 0 3.86-2.34 4.7-4.57 4.95.36.31.69.93.69 1.88 0 1.36-.01 2.45-.01 2.78 0 .27.18.58.69.48A10.01 10.01 0 0 0 22 11.5C22 5.98 17.52 1.5 12 1.5z" />
+                  </svg>
+                  <a
+                    href="https://github.com/jiahongc/HSA-paperless"
+                    className="underline-offset-4 hover:underline"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View on GitHub
+                  </a>
                 </section>
               </div>
             </section>
@@ -1257,27 +1195,78 @@ export default function Home() {
                   }
                 />
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted">Merchant</p>
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-muted">User</p>
+                <select
+                  className="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-3 py-2"
+                  value={
+                    manualForm.user === ""
+                      ? getFirstName(session?.user?.name)
+                      : availableUsers.includes(manualForm.user)
+                        ? manualForm.user
+                        : "_custom"
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setManualForm((prev) => ({
+                      ...prev,
+                      user: value === "_custom" ? " " : value
+                    }));
+                  }}
+                >
+                  {availableUsers.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                  <option value="_custom">Custom...</option>
+                </select>
+                {!availableUsers.includes(manualForm.user) && manualForm.user !== "" ? (
                   <input
                     className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
-                    value={manualForm.merchant}
+                    placeholder="Enter custom user name"
+                    value={manualForm.user === " " ? "" : manualForm.user}
                     onChange={(event) =>
-                      setManualForm((prev) => ({ ...prev, merchant: event.target.value }))
+                      setManualForm((prev) => ({ ...prev, user: event.target.value || " " }))
                     }
+                    autoFocus
                   />
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted">Category</p>
+                ) : null}
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-muted">Category</p>
+                <select
+                  className="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-3 py-2"
+                  value={
+                    manualForm.category === ""
+                      ? ""
+                      : CATEGORIES.includes(manualForm.category)
+                        ? manualForm.category
+                        : "_custom"
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setManualForm((prev) => ({
+                      ...prev,
+                      category: value === "_custom" ? " " : value
+                    }));
+                  }}
+                >
+                  <option value="">Select category</option>
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  <option value="_custom">Custom...</option>
+                </select>
+                {!CATEGORIES.includes(manualForm.category) && manualForm.category !== "" ? (
                   <input
                     className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
-                    value={manualForm.category}
+                    placeholder="Enter custom category"
+                    value={manualForm.category === " " ? "" : manualForm.category}
                     onChange={(event) =>
-                      setManualForm((prev) => ({ ...prev, category: event.target.value }))
+                      setManualForm((prev) => ({ ...prev, category: event.target.value || " " }))
                     }
+                    autoFocus
                   />
-                </div>
+                ) : null}
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -1362,7 +1351,7 @@ export default function Home() {
 
       {isModalOpen && selectedDocument ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6">
-          <div className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-soft">
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-3xl bg-white p-6 shadow-soft">
             <div className="flex items-center justify-between">
               <h3 className="font-serif text-xl">Document preview</h3>
               <button
@@ -1372,7 +1361,7 @@ export default function Home() {
                 Close
               </button>
             </div>
-            <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="mt-6 grid gap-6 overflow-y-auto lg:grid-cols-[1.1fr_0.9fr]">
               <div className="flex h-72 items-center justify-center rounded-2xl bg-surface">
                 {selectedDocument.hasFile ? (
                   isPreviewPdf ? (
@@ -1404,17 +1393,15 @@ export default function Home() {
                     {actionError}
                   </div>
                 ) : null}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted">
                     Document details
                   </p>
-                  <button
-                    className="rounded-full border border-ink/10 px-3 py-1 text-xs disabled:opacity-40"
-                    onClick={() => handleDownloadDocument(selectedDocument)}
-                    disabled={!selectedDocument.hasFile}
-                  >
-                    Download
-                  </button>
+                  {selectedDocument.ocrConfidence !== null ? (
+                    <span className="rounded-full bg-sage/20 px-2 py-0.5 text-[10px] font-semibold text-ink">
+                      OCR {Math.round(selectedDocument.ocrConfidence * 100)}%
+                    </span>
+                  ) : null}
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.2em] text-muted">Title</p>
@@ -1426,27 +1413,78 @@ export default function Home() {
                     }
                   />
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Merchant</p>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">User</p>
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-3 py-2"
+                    value={
+                      editForm.user === ""
+                        ? getFirstName(session?.user?.name)
+                        : availableUsers.includes(editForm.user)
+                          ? editForm.user
+                          : "_custom"
+                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setEditForm((prev) => ({
+                        ...prev,
+                        user: value === "_custom" ? " " : value
+                      }));
+                    }}
+                  >
+                    {availableUsers.map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                    <option value="_custom">Custom...</option>
+                  </select>
+                  {!availableUsers.includes(editForm.user) && editForm.user !== "" ? (
                     <input
                       className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
-                      value={editForm.merchant}
+                      placeholder="Enter custom user name"
+                      value={editForm.user === " " ? "" : editForm.user}
                       onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, merchant: event.target.value }))
+                        setEditForm((prev) => ({ ...prev, user: event.target.value || " " }))
                       }
+                      autoFocus
                     />
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Category</p>
+                  ) : null}
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">Category</p>
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-3 py-2"
+                    value={
+                      editForm.category === ""
+                        ? ""
+                        : CATEGORIES.includes(editForm.category)
+                          ? editForm.category
+                          : "_custom"
+                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setEditForm((prev) => ({
+                        ...prev,
+                        category: value === "_custom" ? " " : value
+                      }));
+                    }}
+                  >
+                    <option value="">Select category</option>
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    <option value="_custom">Custom...</option>
+                  </select>
+                  {!CATEGORIES.includes(editForm.category) && editForm.category !== "" ? (
                     <input
                       className="mt-2 w-full rounded-2xl border border-ink/10 px-3 py-2"
-                      value={editForm.category}
+                      placeholder="Enter custom category"
+                      value={editForm.category === " " ? "" : editForm.category}
                       onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, category: event.target.value }))
+                        setEditForm((prev) => ({ ...prev, category: event.target.value || " " }))
                       }
+                      autoFocus
                     />
-                  </div>
+                  ) : null}
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
@@ -1538,24 +1576,6 @@ export default function Home() {
         </div>
       ) : null}
 
-      <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-ink/10 bg-white px-4 py-2 text-sm text-ink shadow-soft">
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          className="h-5 w-5 text-ink"
-          fill="currentColor"
-        >
-          <path d="M12 1.5C6.48 1.5 2 5.98 2 11.5c0 4.42 2.87 8.17 6.84 9.49.5.09.68-.22.68-.48 0-.24-.01-.88-.01-1.73-2.78.6-3.37-1.34-3.37-1.34-.46-1.17-1.12-1.48-1.12-1.48-.91-.62.07-.6.07-.6 1.01.07 1.54 1.04 1.54 1.04.9 1.55 2.36 1.1 2.94.84.09-.65.35-1.1.64-1.35-2.22-.25-4.56-1.11-4.56-4.96 0-1.1.39-2 1.03-2.71-.1-.25-.45-1.28.1-2.66 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.8c.85 0 1.71.12 2.51.35 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.41.1 2.66.64.71 1.03 1.61 1.03 2.71 0 3.86-2.34 4.7-4.57 4.95.36.31.69.93.69 1.88 0 1.36-.01 2.45-.01 2.78 0 .27.18.58.69.48A10.01 10.01 0 0 0 22 11.5C22 5.98 17.52 1.5 12 1.5z" />
-        </svg>
-        <a
-          href="https://github.com/jiahongc/HSA-paperless"
-          className="text-ink underline-offset-4 hover:underline"
-          target="_blank"
-          rel="noreferrer"
-        >
-          jiahongc
-        </a>
-      </div>
     </div>
   );
 }

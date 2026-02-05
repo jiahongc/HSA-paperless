@@ -12,5 +12,8 @@
 .DS_Store
 *.log
 
+# typescript
+tsconfig.tsbuildinfo
+
 # env
 .env*

@@ -47,6 +47,8 @@ Google OAuth via NextAuth.js (JWT strategy). The `drive.appdata` scope grants ac
 
 - **`lib/auth.ts`** — NextAuth config with Google provider, JWT callbacks, token refresh logic
 - **`lib/drive.ts`** — All Google Drive operations: folder creation, metadata read/write, file upload/download/delete
+- **`lib/ocr.ts`** — Google Cloud Vision API integration; extracts title, date, amount, category from uploaded documents
+- **`lib/errors.ts`** — Shared `isAuthError` helper used by all API routes
 - **`app/page.tsx`** — Main dashboard (single large client component with all UI state)
 - **`types/documents.ts`** — `Document` and `DocumentsFile` type definitions
 
@@ -69,9 +71,9 @@ All document API routes require an authenticated session. Auth failures return 4
 
 The dashboard (`app/page.tsx`) is a single `"use client"` component with:
 - Two tabs: Dashboard and HSA Education
-- KPI cards, stacked bar charts (yearly/monthly toggle), document table
+- KPI cards (total spend, reimbursed, not reimbursed), document table
 - Upload dropzone, document preview modal, manual entry form
-- In-memory search across title, merchant, category, notes, filename
+- In-memory search across title, category, notes, filename
 - ~20 `useState` hooks for local state management
 
 ### Styling
@@ -85,5 +87,8 @@ Tailwind CSS with a custom Anthropic-inspired color palette defined in `tailwind
 - **No server-side storage** — privacy-first; all data lives in user's Drive
 - **Single JSON metadata file** — avoids Drive API scanning; fast dashboard load
 - **`drive.appdata` scope** — files are hidden from the user's normal Drive view and only accessible by this app
-- **OCR on upload only** — Google Cloud Vision runs once; results saved to metadata
+- **OCR on upload only** — Google Cloud Vision runs once via REST API; extracts title, date, amount, category using regex/keyword heuristics; failures are non-blocking (falls back to empty fields)
+- **Drive filenames** — uploaded files are renamed to `date_title.extension` format (e.g., `2026-02-05_cvs-prescription.jpg`); duplicates get numeric suffixes
+- **Category suggestions** — `CATEGORIES` constant in `app/page.tsx` with common HSA categories; select dropdown with custom input fallback
+- **Post-upload review** — after upload, the first document's edit modal opens automatically so the user can verify OCR-extracted fields
 - **Manual entries supported** — `hasFile: false` documents have no attached file

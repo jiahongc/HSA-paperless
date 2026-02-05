@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { google } from "googleapis";
 import type { drive_v3 } from "googleapis";
 import type { DocumentsFile } from "../types/documents";
@@ -148,7 +149,7 @@ export async function uploadDocumentFile(
     },
     media: {
       mimeType,
-      body: buffer
+      body: Readable.from(buffer)
     },
     fields: "id, name"
   });
