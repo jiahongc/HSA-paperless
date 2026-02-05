@@ -1,11 +1,11 @@
 # Architecture & Technical Plan
 
-This document outlines the system design, data model, and implementation plan for **HSA Receipts Tracker** with zero server-side storage of user receipts or metadata.
+This document outlines the system design, data model, and implementation plan for **HSA Paperless** with zero server-side storage of user documents or metadata.
 
 ## Goals
 - End users only sign in with Google and start using the app.
-- Receipt files and metadata are stored **only** in the user’s Google Drive `appDataFolder`.
-- No server-side storage of receipts or metadata.
+- Document files and metadata are stored **only** in the user’s Google Drive `appDataFolder`.
+- No server-side storage of documents or metadata.
 - Fast dashboard load from a single metadata JSON file.
 - Clean, modern UI with a dashboard + education tab.
 
@@ -14,36 +14,36 @@ This document outlines the system design, data model, and implementation plan fo
 - **Frontend**: Next.js (App Router), React, TypeScript
 - **Auth**: Google OAuth (OpenID + Drive scope)
 - **Storage**: Google Drive `appDataFolder`
-- **Metadata**: `metadata/receipts.json` stored in `appDataFolder`
+- **Metadata**: `documents.json` stored in `appDataFolder`
 - **OCR**: Google Cloud Vision API (one-time on upload)
 - **Hosting**: Vercel
 
 ## User Data Flow
 1. User signs in with Google.
-2. App locates or initializes `metadata/receipts.json` in `appDataFolder`.
+2. App locates or initializes `documents.json` in the `appDataFolder`.
 3. Dashboard renders from JSON metadata (no Drive scanning).
-4. Receipt uploads are stored in `appDataFolder/receipts/YYYY-MM/`.
+4. Document uploads are stored in `appDataFolder/documents/YYYY-MM/`.
 5. OCR runs once at upload; extracted fields are saved to JSON.
 6. Reimbursement changes update only JSON (and optionally file metadata).
 
 ## Google Drive Storage Model
-**Hidden app folder (appDataFolder):**
-- `receipts/YYYY-MM/receipt_<timestamp>.<ext>`
-- `metadata/receipts.json`
+**Hidden Google Drive folder (appDataFolder):**
+- `documents/YYYY-MM/document_<timestamp>.<ext>`
+- `documents.json`
 
 **Why appDataFolder:**
-- Hidden from user’s main Drive view.
+- Hidden from the user’s main Drive view.
 - Access restricted to this app only.
 
-## Metadata Schema (receipts.json)
+## Metadata Schema (documents.json)
 ```json
 {
   "version": 1,
-  "receipts": [
+  "documents": [
     {
-      "id": "rct_20260204_001",
+      "id": "doc_20260204_001",
       "fileId": "drive_file_id_here",
-      "filename": "receipt_2026-02-04_001.jpg",
+      "filename": "document_2026-02-04_001.jpg",
       "hasFile": true,
       "title": "CVS Prescription",
       "merchant": "CVS",
@@ -61,7 +61,7 @@ This document outlines the system design, data model, and implementation plan fo
 ```
 
 **Rules**
-- `hasFile=false` indicates manual entry without an attached receipt.
+- `hasFile=false` indicates manual entry without an attached document.
 - `title` is editable and short; no amounts in title.
 - `reimbursedDate` is optional and uses a date picker.
 
@@ -89,7 +89,7 @@ Search matches these fields in memory:
   - Toggle: `Yearly` (default) / `Monthly`
   - Yearly: all years, no dropdown
   - Monthly: year dropdown
-- Receipt table
+- Document table
   - Reimbursed toggle
   - View (center modal)
   - Download
@@ -102,23 +102,23 @@ Search matches these fields in memory:
 
 **Monthly view**
 - Group by month within selected year
-- Dropdown years range from earliest receipt year to current year
+- Dropdown years range from earliest document year to current year
 
 ## UI Styling Notes
 - Anthropic-inspired palette (warm off-white, muted accents)
 - Premium typography pairing (serif heading + modern sans body)
-- Centered receipt preview modal
+- Centered document preview modal
 
 ## Security & Privacy
-- Receipts and metadata never stored on our servers.
-- OAuth scopes limited to appDataFolder + basic profile/email.
+- Documents and metadata never stored on our servers.
+- OAuth scopes limited to drive.appdata + basic profile/email.
 - User can revoke access at any time.
 
 ## Implementation Phases
 1. **Auth + Drive access**
    - Google OAuth
    - appDataFolder read/write
-   - init `receipts.json`
+   - init `documents.json`
 
 2. **Upload + OCR**
    - multi-file upload
@@ -129,7 +129,7 @@ Search matches these fields in memory:
 3. **Dashboard UI**
    - KPI cards
    - chart toggle + calculations
-   - receipt table
+   - document table
    - preview modal
 
 4. **Education Tab**
@@ -144,7 +144,7 @@ Search matches these fields in memory:
 ## Open Questions (If Needed Later)
 - CSV export format details
 - Optional “reimbursed date” usage rules
-- Future import of existing Drive receipts
+- Future import of existing Drive documents
 
 ## Diagrams
 
@@ -171,7 +171,7 @@ flowchart TB
   U[Upload files]:::step --> S[Save to appDataFolder]:::io
   S --> O[Run OCR]:::step
   O --> F[User edits fields]:::step
-  F --> J[Update receipts.json]:::io
+  F --> J[Update documents.json]:::io
 ```
 
 ### Login + Load Flow
@@ -180,6 +180,6 @@ flowchart TB
   classDef step fill:#f8f5ef,stroke:#c9c3b8,color:#1a1a1a
   classDef io fill:#e7efe9,stroke:#a3b9a7,color:#1a1a1a
 
-  L[Google sign-in]:::step --> R[Read receipts.json]:::io
+  L[Google sign-in]:::step --> R[Read documents.json]:::io
   R --> T[Render dashboard]:::step
 ```

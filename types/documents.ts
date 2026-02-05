@@ -1,4 +1,4 @@
-export type Receipt = {
+export type Document = {
   id: string;
   fileId: string | null;
   filename: string | null;
@@ -15,7 +15,7 @@ export type Receipt = {
   ocrConfidence: number | null;
 };
 
-export type ReceiptsFile = {
+export type DocumentsFile = {
   version: number;
-  receipts: Receipt[];
+  documents: Document[];
 };

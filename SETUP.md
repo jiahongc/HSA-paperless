@@ -51,3 +51,4 @@ In Vercel → Project Settings → Environment Variables, set the same values:
 ## Notes
 - End users do **not** need to set environment variables.
 - OAuth redirect URLs must match exactly (including `https` and the path).
+- The app stores files in the hidden Google Drive `appDataFolder` along with `documents.json`.

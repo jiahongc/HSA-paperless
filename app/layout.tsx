@@ -14,8 +14,8 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "HSA Receipts Tracker",
-  description: "Track HSA receipts with zero server storage."
+  title: "HSA Paperless",
+  description: "Track HSA documents with zero server storage."
 };
 
 export default function RootLayout({

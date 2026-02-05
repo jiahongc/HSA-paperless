@@ -1,8 +1,9 @@
 import { google } from "googleapis";
 import type { drive_v3 } from "googleapis";
-import type { ReceiptsFile } from "../types/receipts";
+import type { DocumentsFile } from "../types/documents";
 
-const RECEIPTS_METADATA_NAME = "receipts.json";
+const DOCUMENTS_METADATA_NAME = "documents.json";
+const DOCUMENTS_FOLDER_NAME = "documents";
 
 function getDrive(accessToken: string) {
   const auth = new google.auth.OAuth2();
@@ -10,10 +11,15 @@ function getDrive(accessToken: string) {
   return google.drive({ version: "v3", auth });
 }
 
-async function getOrCreateMetadataFileId(drive: drive_v3.Drive) {
+async function getOrCreateChildFolderId(
+  drive: drive_v3.Drive,
+  name: string,
+  parentId?: string
+) {
+  const parentQuery = parentId ? ` and '${parentId}' in parents` : "";
   const list = await drive.files.list({
     spaces: "appDataFolder",
-    q: `name = '${RECEIPTS_METADATA_NAME}' and trashed = false`,
+    q: `name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentQuery}`,
     fields: "files(id, name)"
   });
 
@@ -22,14 +28,49 @@ async function getOrCreateMetadataFileId(drive: drive_v3.Drive) {
     return existing.id;
   }
 
-  const initialData: ReceiptsFile = {
+  const created = await drive.files.create({
+    requestBody: {
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId ?? "appDataFolder"]
+    },
+    fields: "id"
+  });
+
+  return created.data.id as string;
+}
+
+async function getOrCreateMetadataFileId(drive: drive_v3.Drive) {
+  const list = await drive.files.list({
+    spaces: "appDataFolder",
+    q: `name = '${DOCUMENTS_METADATA_NAME}' and trashed = false`,
+    fields: "files(id, name)"
+  });
+
+  const existing = list.data.files?.[0];
+  if (existing?.id) {
+    return existing.id;
+  }
+
+  const legacyList = await drive.files.list({
+    spaces: "appDataFolder",
+    q: "name = 'receipts.json' and trashed = false",
+    fields: "files(id, name)"
+  });
+
+  const legacy = legacyList.data.files?.[0];
+  if (legacy?.id) {
+    return legacy.id;
+  }
+
+  const initialData: DocumentsFile = {
     version: 1,
-    receipts: []
+    documents: []
   };
 
   const created = await drive.files.create({
     requestBody: {
-      name: RECEIPTS_METADATA_NAME,
+      name: DOCUMENTS_METADATA_NAME,
       parents: ["appDataFolder"]
     },
     media: {
@@ -42,7 +83,7 @@ async function getOrCreateMetadataFileId(drive: drive_v3.Drive) {
   return created.data.id as string;
 }
 
-export async function readReceiptsFile(accessToken: string): Promise<ReceiptsFile> {
+export async function readDocumentsFile(accessToken: string): Promise<DocumentsFile> {
   const drive = getDrive(accessToken);
   const fileId = await getOrCreateMetadataFileId(drive);
 
@@ -52,12 +93,16 @@ export async function readReceiptsFile(accessToken: string): Promise<ReceiptsFil
   );
 
   const raw = Buffer.from(response.data as ArrayBuffer).toString("utf-8");
-  return JSON.parse(raw) as ReceiptsFile;
+  const parsed = JSON.parse(raw) as DocumentsFile & { receipts?: DocumentsFile["documents"] };
+  if (!parsed.documents && parsed.receipts) {
+    return { version: parsed.version ?? 1, documents: parsed.receipts };
+  }
+  return parsed;
 }
 
-export async function writeReceiptsFile(
+export async function writeDocumentsFile(
   accessToken: string,
-  data: ReceiptsFile
+  data: DocumentsFile
 ) {
   const drive = getDrive(accessToken);
   const fileId = await getOrCreateMetadataFileId(drive);
@@ -69,4 +114,47 @@ export async function writeReceiptsFile(
       body: JSON.stringify(data)
     }
   });
+}
+
+export async function uploadDocumentFile(
+  accessToken: string,
+  {
+    filename,
+    mimeType,
+    buffer,
+    folder
+  }: {
+    filename: string;
+    mimeType: string;
+    buffer: Buffer;
+    folder: string;
+  }
+) {
+  const drive = getDrive(accessToken);
+  const documentsFolderId = await getOrCreateChildFolderId(
+    drive,
+    DOCUMENTS_FOLDER_NAME
+  );
+  const monthFolderId = await getOrCreateChildFolderId(
+    drive,
+    folder,
+    documentsFolderId
+  );
+
+  const created = await drive.files.create({
+    requestBody: {
+      name: filename,
+      parents: [monthFolderId]
+    },
+    media: {
+      mimeType,
+      body: buffer
+    },
+    fields: "id, name"
+  });
+
+  return {
+    fileId: created.data.id as string,
+    filename: created.data.name as string
+  };
 }

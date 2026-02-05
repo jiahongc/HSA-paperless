@@ -23,18 +23,18 @@ This document outlines the UI structure, component breakdown, and visual directi
 - Columns: Title, Merchant, Category, Date, Amount, Reimbursed, Actions.
 - Actions: View, Download, Delete.
 - Reimbursed is a toggle with optional reimbursed date picker.
-- Row click opens receipt preview modal.
+- Row click opens document preview modal.
 
 ## Receipt Preview Modal
 - Centered modal on desktop, full screen on mobile.
-- Large receipt preview with basic zoom controls.
+- Large document preview with basic zoom controls.
 - Right panel with editable fields and save button.
 
 ## Upload Experience
 - Drag-and-drop zone for desktop.
 - Browse button for mobile.
 - Multi-file upload supported.
-- OCR results shown in a review form per receipt.
+- OCR results shown in a review form per document.
 
 ## Search
 - Single search bar that filters by title, merchant, category, notes, filename.
