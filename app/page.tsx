@@ -95,6 +95,8 @@ export default function Home() {
     reimbursed: false,
     reimbursedDate: ""
   });
+  const [filterYear, setFilterYear] = useState<string>("all");
+  const [filterUser, setFilterUser] = useState<string>("all");
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
@@ -476,8 +478,17 @@ export default function Home() {
   }, [documents, search]);
 
   const totals = useMemo(() => {
-    const total = documents.reduce((sum, r) => sum + r.amount, 0);
-    const reimbursed = documents
+    const filtered = documents.filter((doc) => {
+      if (filterYear !== "all" && !doc.date.startsWith(filterYear)) {
+        return false;
+      }
+      if (filterUser !== "all" && doc.user !== filterUser) {
+        return false;
+      }
+      return true;
+    });
+    const total = filtered.reduce((sum, r) => sum + r.amount, 0);
+    const reimbursed = filtered
       .filter((r) => r.reimbursed)
       .reduce((sum, r) => sum + r.amount, 0);
     return {
@@ -485,17 +496,28 @@ export default function Home() {
       reimbursed,
       pending: total - reimbursed
     };
-  }, [documents]);
+  }, [documents, filterYear, filterUser]);
 
   const availableUsers = useMemo(() => {
     const users = new Set<string>();
-    const lastName = getFirstName(session?.user?.name);
-    if (lastName) users.add(lastName);
+    const firstName = getFirstName(session?.user?.name);
+    if (firstName) users.add(firstName);
     documents.forEach((doc) => {
       if (doc.user?.trim()) users.add(doc.user.trim());
     });
     return Array.from(users).sort();
   }, [documents, session?.user?.name]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    documents.forEach((doc) => {
+      if (doc.date) {
+        const year = doc.date.slice(0, 4);
+        if (year) years.add(year);
+      }
+    });
+    return Array.from(years).sort().reverse();
+  }, [documents]);
 
   const previewUrl = selectedDocument?.hasFile
     ? `/api/documents/file/${selectedDocument.id}`
@@ -602,115 +624,139 @@ export default function Home() {
           ) : null}
           {activeTab === "dashboard" ? (
             <div className="space-y-8">
-              <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-3xl bg-white/80 p-6 shadow-soft backdrop-blur">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        Upload documents
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        Browse files
-                      </button>
-                      <button
-                        className="flex h-9 w-9 items-center justify-center rounded-full border border-ink/10 bg-white text-lg font-semibold text-ink"
-                        aria-label="Manual entry"
-                        title="Manual entry"
-                        onClick={openManualEntry}
-                      >
-                        +
-                      </button>
-                      <button
-                        className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-                        disabled={queuedFiles.length === 0 || isUploading}
-                        onClick={handleUpload}
-                      >
-                        {isUploading
-                          ? `Uploading ${uploadTotal} file${uploadTotal === 1 ? "" : "s"}...`
-                          : "Upload"}
-                      </button>
-                      <button
-                        className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
-                        disabled={queuedFiles.length === 0}
-                        onClick={() => {
-                          setQueuedFiles([]);
-                          setUploadError(null);
-                        }}
-                      >
-                        Clear
-                      </button>
-                    </div>
+              <section className="rounded-3xl bg-white/80 p-6 shadow-soft backdrop-blur">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                    Spending summary
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <select
+                      className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm"
+                      value={filterYear}
+                      onChange={(e) => setFilterYear(e.target.value)}
+                    >
+                      <option value="all">All years</option>
+                      {availableYears.map((year) => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm"
+                      value={filterUser}
+                      onChange={(e) => setFilterUser(e.target.value)}
+                    >
+                      <option value="all">All users</option>
+                      {availableUsers.map((user) => (
+                        <option key={user} value={user}>{user}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div
-                    className="mt-6 rounded-2xl border border-dashed border-ink/15 bg-base p-6 text-sm text-muted"
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      handleFiles(event.dataTransfer.files);
-                    }}
-                  >
-                    {queuedFiles.length === 0 ? (
-                      "Drag and drop documents or PDFs here. Text recognition (OCR) will auto-fill the details."
-                    ) : (
-                      <div className="space-y-2 text-ink">
-                        <p className="text-sm font-semibold">
-                          {queuedFiles.length} document{queuedFiles.length === 1 ? "" : "s"} selected
-                        </p>
-                        <ul className="text-xs text-muted">
-                          {queuedFiles.map((file) => (
-                            <li key={`${file.name}-${file.size}`}>{file.name}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                  {uploadError ? (
-                    <p className="mt-3 text-xs text-coral">{uploadError}</p>
-                  ) : null}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    multiple
-                    accept="image/*,application/pdf"
-                    onChange={(event) => handleFiles(event.target.files)}
-                  />
                 </div>
-
-                <div className="grid gap-4">
-                  <div className="rounded-3xl bg-white/80 p-5 shadow-soft">
+                <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-base p-5">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted">
                       Total spend
                     </p>
                     <p className="mt-3 text-3xl font-semibold">
                       {formatCurrency(totals.total)}
                     </p>
-                    <p className="mt-2 text-sm text-muted">&nbsp;</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="rounded-3xl bg-white/80 p-5 shadow-soft">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        Reimbursed
-                      </p>
-                      <p className="mt-3 text-2xl font-semibold">
-                        {formatCurrency(totals.reimbursed)}
-                      </p>
-                    </div>
-                    <div className="rounded-3xl bg-white/80 p-5 shadow-soft">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        Not reimbursed
-                      </p>
-                      <p className="mt-3 text-2xl font-semibold">
-                        {formatCurrency(totals.pending)}
-                      </p>
-                    </div>
+                  <div className="rounded-2xl bg-base p-5">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                      Reimbursed
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold">
+                      {formatCurrency(totals.reimbursed)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-base p-5">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                      Not reimbursed
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold">
+                      {formatCurrency(totals.pending)}
+                    </p>
                   </div>
                 </div>
+              </section>
+
+              <section className="rounded-3xl bg-white/80 p-6 shadow-soft backdrop-blur">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                      Upload documents
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Browse files
+                    </button>
+                    <button
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-ink/10 bg-white text-lg font-semibold text-ink"
+                      aria-label="Manual entry"
+                      title="Manual entry"
+                      onClick={openManualEntry}
+                    >
+                      +
+                    </button>
+                    <button
+                      className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                      disabled={queuedFiles.length === 0 || isUploading}
+                      onClick={handleUpload}
+                    >
+                      {isUploading
+                        ? `Uploading ${uploadTotal} file${uploadTotal === 1 ? "" : "s"}...`
+                        : "Upload"}
+                    </button>
+                    <button
+                      className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
+                      disabled={queuedFiles.length === 0}
+                      onClick={() => {
+                        setQueuedFiles([]);
+                        setUploadError(null);
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className="mt-6 rounded-2xl border border-dashed border-ink/15 bg-base p-6 text-sm text-muted"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    handleFiles(event.dataTransfer.files);
+                  }}
+                >
+                  {queuedFiles.length === 0 ? (
+                    "Drag and drop documents or PDFs here. Text recognition (OCR) will auto-fill the details."
+                  ) : (
+                    <div className="space-y-2 text-ink">
+                      <p className="text-sm font-semibold">
+                        {queuedFiles.length} document{queuedFiles.length === 1 ? "" : "s"} selected
+                      </p>
+                      <ul className="text-xs text-muted">
+                        {queuedFiles.map((file) => (
+                          <li key={`${file.name}-${file.size}`}>{file.name}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                {uploadError ? (
+                  <p className="mt-3 text-xs text-coral">{uploadError}</p>
+                ) : null}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  multiple
+                  accept="image/*,application/pdf"
+                  onChange={(event) => handleFiles(event.target.files)}
+                />
               </section>
 
               <section className="rounded-3xl bg-white/80 p-6 shadow-soft backdrop-blur">
