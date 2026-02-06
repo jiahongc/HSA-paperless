@@ -6,6 +6,8 @@
 
 Track HSA documents with a clean dashboard, reimbursement status, and OCR autofill while keeping all files and metadata in the user's own Google Drive app data folder.
 
+**Live:** [hsa-paperless.vercel.app](https://hsa-paperless.vercel.app)
+
 ## For Users
 1. Open the app.
 2. Sign in with Google.
@@ -16,7 +18,7 @@ That's it — no accounts to create and no extra setup.
 ## How It Works
 - Document files are saved to the user's Google Drive `appDataFolder` (hidden from normal Drive view).
 - Metadata is stored in `documents.json` in the same hidden folder.
-- OCR runs once on upload to autofill fields.
+- OCR runs once on upload to autofill fields (Vision API for images, pdfjs-dist for PDFs).
 - The dashboard always loads from the JSON file on login.
 
 ## Features
@@ -94,4 +96,3 @@ See [SETUP.md](SETUP.md) for detailed Google Cloud configuration.
 ## Roadmap
 - Bulk edit
 - Import existing Drive folder (optional)
-- Improved PDF OCR support

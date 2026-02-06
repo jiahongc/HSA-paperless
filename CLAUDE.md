@@ -47,7 +47,7 @@ Google OAuth via NextAuth.js (JWT strategy). The `drive.appdata` scope grants ac
 
 - **`lib/auth.ts`** — NextAuth config with Google provider, JWT callbacks, token refresh logic
 - **`lib/drive.ts`** — All Google Drive operations: folder creation, metadata read/write with per-user write lock, file upload/download/delete
-- **`lib/ocr.ts`** — Google Cloud Vision API integration; extracts title, date, amount, category from uploaded documents
+- **`lib/ocr.ts`** — OCR pipeline: Google Cloud Vision API for images, pdfjs-dist for PDF text extraction; extracts title, date, amount, category
 - **`lib/errors.ts`** — Shared `isAuthError` helper (checks 401 and 403) used by all API routes
 - **`app/page.tsx`** — Main dashboard (single large client component with all UI state)
 - **`types/documents.ts`** — `Document` and `DocumentsFile` type definitions
@@ -87,7 +87,7 @@ Tailwind CSS with a custom Anthropic-inspired color palette defined in `tailwind
 - **No server-side storage** — privacy-first; all data lives in user's Drive
 - **Single JSON metadata file** — avoids Drive API scanning; fast dashboard load
 - **`drive.appdata` scope** — files are hidden from the user's normal Drive view and only accessible by this app
-- **OCR on upload only** — Google Cloud Vision runs once via REST API; extracts title, date, amount, category using regex/keyword heuristics; failures are non-blocking (falls back to empty fields)
+- **OCR on upload only** — Images use Google Cloud Vision API via REST; PDFs use pdfjs-dist for direct text extraction (no Vision API needed). Both paths extract title, date, amount, category using regex/keyword heuristics; failures are non-blocking (falls back to empty fields)
 - **Drive filenames** — uploaded files keep their original filename; duplicates get numeric suffixes (e.g., `receipt.jpg`, `receipt_1.jpg`)
 - **Category suggestions** — `CATEGORIES` constant in `app/page.tsx` with common HSA categories; select dropdown with custom input fallback
 - **Post-upload review** — after upload, the first document's edit modal opens automatically so the user can verify OCR-extracted fields

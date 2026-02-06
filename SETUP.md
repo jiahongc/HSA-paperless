@@ -23,9 +23,7 @@ Enable the following APIs for the project:
 - Create an OAuth Client ID (Web application).
 - Add **Authorized redirect URIs**:
   - Local dev: `http://localhost:3000/api/auth/callback/google`
-  - Production (add later): `https://YOUR-VERCEL-URL/api/auth/callback/google`
-
-You can add the production URL after your first Vercel deploy.
+  - Production: `https://hsa-paperless.vercel.app/api/auth/callback/google`
 
 ## 5. Create a Google Vision API Key
 - Create an API key for Google Cloud Vision.
@@ -45,7 +43,7 @@ In Vercel → Project Settings → Environment Variables, set the same values:
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `NEXTAUTH_SECRET`
-- `NEXTAUTH_URL` (use your Vercel URL)
+- `NEXTAUTH_URL` (`https://hsa-paperless.vercel.app`)
 - `GOOGLE_VISION_API_KEY`
 
 ## Notes
