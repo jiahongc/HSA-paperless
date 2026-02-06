@@ -17,8 +17,8 @@ const config: Config = {
         sky: "#6f8fb3"
       },
       fontFamily: {
-        serif: ["Fraunces", "ui-serif", "serif"],
-        sans: ["Manrope", "ui-sans-serif", "system-ui", "sans-serif"]
+        serif: ["var(--font-fraunces)", "Fraunces", "Georgia", "ui-serif", "serif"],
+        sans: ["var(--font-manrope)", "Manrope", "system-ui", "ui-sans-serif", "sans-serif"]
       },
       boxShadow: {
         soft: "0 12px 30px rgba(28, 25, 23, 0.08)"

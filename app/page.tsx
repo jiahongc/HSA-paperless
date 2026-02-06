@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import AuthButton from "../components/AuthButton";
 import type { Document, DocumentsFile } from "../types/documents";
@@ -27,6 +27,7 @@ const CATEGORIES = [
 ];
 
 function formatCurrency(amount: number) {
+  if (!Number.isFinite(amount)) return "$0.00";
   return amount.toLocaleString("en-US", {
     style: "currency",
     currency: "USD"
@@ -68,7 +69,6 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadedCount, setUploadedCount] = useState(0);
   const [uploadTotal, setUploadTotal] = useState(0);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isSavingManual, setIsSavingManual] = useState(false);
@@ -105,7 +105,7 @@ export default function Home() {
     setQueuedFiles((prev) => [...prev, ...incoming]);
   };
 
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     if (!session) return;
     setIsLoading(true);
     setLoadError(null);
@@ -128,13 +128,12 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [session]);
 
   const handleUpload = async () => {
     if (!queuedFiles.length) return;
     setIsUploading(true);
     setUploadError(null);
-    setUploadedCount(0);
     setUploadTotal(queuedFiles.length);
 
     try {
@@ -414,6 +413,10 @@ export default function Home() {
   const handleExportDocuments = async () => {
     try {
       const response = await fetch("/api/documents/export");
+      if (response.status === 401) {
+        setActionError("Google authorization expired. Please sign out and sign in again.");
+        return;
+      }
       if (!response.ok) {
         throw new Error("Export failed");
       }
@@ -473,26 +476,47 @@ export default function Home() {
       return;
     }
     void loadDocuments();
-  }, [session]);
+  }, [session, loadDocuments]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isModalOpen) setIsModalOpen(false);
+        if (isManualOpen) setIsManualOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isModalOpen, isManualOpen]);
 
   const filteredDocuments = useMemo(() => {
-    if (!search.trim()) {
-      return documents;
+    let result = documents;
+
+    if (filterYear !== "all") {
+      result = result.filter((doc) => doc.date.startsWith(filterYear));
     }
-    const query = search.toLowerCase();
-    return documents.filter((document) => {
-      return [
-        document.user ?? "",
-        document.title,
-        document.category,
-        document.notes,
-        document.filename ?? ""
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
-    });
-  }, [documents, search]);
+    if (filterUser !== "all") {
+      result = result.filter((doc) => doc.user === filterUser);
+    }
+
+    if (search.trim()) {
+      const query = search.toLowerCase();
+      result = result.filter((document) => {
+        return [
+          document.user ?? "",
+          document.title,
+          document.category,
+          document.notes,
+          document.filename ?? ""
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      });
+    }
+
+    return result;
+  }, [documents, search, filterYear, filterUser]);
 
   const totals = useMemo(() => {
     const filtered = documents.filter((doc) => {
@@ -536,12 +560,14 @@ export default function Home() {
     return Array.from(years).sort().reverse();
   }, [documents]);
 
-  const previewUrl = selectedDocument?.hasFile
-    ? `/api/documents/file/${selectedDocument.id}`
-    : "";
-  const isPreviewPdf = selectedDocument?.filename
-    ? selectedDocument.filename.toLowerCase().endsWith(".pdf")
-    : false;
+  const previewUrl = useMemo(
+    () => selectedDocument?.hasFile ? `/api/documents/file/${selectedDocument.id}` : "",
+    [selectedDocument?.hasFile, selectedDocument?.id]
+  );
+  const isPreviewPdf = useMemo(
+    () => selectedDocument?.filename?.toLowerCase().endsWith(".pdf") ?? false,
+    [selectedDocument?.filename]
+  );
 
   if (status === "loading") {
     return (
@@ -759,8 +785,8 @@ export default function Home() {
                         {queuedFiles.length} document{queuedFiles.length === 1 ? "" : "s"} selected
                       </p>
                       <ul className="text-xs text-muted">
-                        {queuedFiles.map((file) => (
-                          <li key={`${file.name}-${file.size}`}>{file.name}</li>
+                        {queuedFiles.map((file, index) => (
+                          <li key={`${index}-${file.name}-${file.size}`}>{file.name}</li>
                         ))}
                       </ul>
                     </div>

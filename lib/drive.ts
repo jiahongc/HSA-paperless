@@ -82,6 +82,10 @@ async function getOrCreateMetadataFileId(drive: drive_v3.Drive) {
 
   const legacy = legacyList.data.files?.[0];
   if (legacy?.id) {
+    await drive.files.update({
+      fileId: legacy.id,
+      requestBody: { name: DOCUMENTS_METADATA_NAME }
+    });
     return legacy.id;
   }
 

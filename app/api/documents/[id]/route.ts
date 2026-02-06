@@ -34,7 +34,7 @@ function sanitizeUpdates(body: Partial<Document>) {
   if (typeof body.category === "string") {
     updates.category = body.category.trim();
   }
-  if (typeof body.date === "string") {
+  if (typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
     updates.date = body.date;
   }
   if (typeof body.amount === "number" && Number.isFinite(body.amount)) {

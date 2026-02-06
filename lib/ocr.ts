@@ -337,9 +337,12 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
     ]
   };
 
-  const response = await fetch(`${VISION_API_URL}?key=${apiKey}`, {
+  const response = await fetch(VISION_API_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey
+    },
     body: JSON.stringify(body)
   });
 
@@ -383,7 +386,7 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
     date: extractDate(fullText),
     amount: extractAmount(fullText),
     category: extractCategory(fullText),
-    confidence: typeof pageConfidence === "number" ? Math.round(pageConfidence * 100) / 100 : null
+    confidence: typeof pageConfidence === "number" ? Math.round(Math.min(1, pageConfidence > 1 ? pageConfidence / 100 : pageConfidence) * 100) / 100 : null
   };
 
   console.log("OCR result:", result);

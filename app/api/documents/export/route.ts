@@ -30,10 +30,27 @@ export async function GET() {
 
     archive.pipe(passThrough);
 
+    const MAX_EXPORT_BYTES = 50 * 1024 * 1024; // 50 MB cap
+    let totalBytes = 0;
+    const usedNames = new Set<string>();
     for (const doc of documentsWithFiles) {
       try {
         const file = await getDocumentFile(session.accessToken, doc.fileId!);
-        const filename = doc.filename || file.filename || `${doc.id}.bin`;
+        let filename = doc.filename || file.filename || `${doc.id}.bin`;
+        if (usedNames.has(filename)) {
+          const ext = filename.lastIndexOf(".");
+          const base = ext > 0 ? filename.slice(0, ext) : filename;
+          const suffix = ext > 0 ? filename.slice(ext) : "";
+          let counter = 1;
+          while (usedNames.has(`${base}_${counter}${suffix}`)) counter++;
+          filename = `${base}_${counter}${suffix}`;
+        }
+        usedNames.add(filename);
+        totalBytes += file.buffer.length;
+        if (totalBytes > MAX_EXPORT_BYTES) {
+          console.warn("Export size cap reached, skipping remaining files");
+          break;
+        }
         archive.append(file.buffer, { name: filename });
       } catch (error) {
         console.error(`Failed to fetch file for document ${doc.id}`, error);

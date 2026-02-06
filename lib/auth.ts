@@ -70,7 +70,7 @@ export const authOptions: NextAuthOptions = {
           ...token,
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
-          expiresAt: account.expires_at
+          expiresAt: account.expires_at ?? Math.floor(Date.now() / 1000 + 3600)
         };
       }
 
