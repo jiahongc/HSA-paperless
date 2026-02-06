@@ -1,4 +1,30 @@
 const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
+const MAX_PDF_PAGES = 10;
+
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+  const data = new Uint8Array(buffer);
+  const doc = await pdfjsLib.getDocument({ data, useSystemFonts: true, isEvalSupported: false, disableFontFace: true }).promise;
+
+  const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES);
+  const texts: string[] = [];
+
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items
+      .filter((item) => "str" in item)
+      .map((item) => (item as { str: string }).str)
+      .join(" ");
+    if (pageText.trim()) {
+      texts.push(pageText);
+    }
+  }
+
+  await doc.destroy();
+  return texts.join("\n");
+}
 
 type OcrResult = {
   title: string;
@@ -314,17 +340,8 @@ function extractCategory(text: string): string {
   return bestCategory;
 }
 
-export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResult> {
-  const apiKey = process.env.GOOGLE_VISION_API_KEY;
-  if (!apiKey) {
-    console.warn("GOOGLE_VISION_API_KEY not set, skipping OCR");
-    return { title: "", date: "", amount: 0, category: "", confidence: null };
-  }
-
-  // For PDFs, we need to use a different approach
-  // Google Vision API's images:annotate doesn't support PDFs directly
-  // We'll send it anyway and let it try - it works for single-page PDFs sometimes
-  const base64 = buffer.toString("base64");
+async function ocrImage(apiKey: string, imageBuffer: Buffer): Promise<{ text: string; confidence: number | null }> {
+  const base64 = imageBuffer.toString("base64");
 
   const body = {
     requests: [
@@ -349,44 +366,76 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
   if (!response.ok) {
     const errorText = await response.text();
     console.error("Vision API error:", response.status, errorText);
-
-    // If it's a PDF and Vision API can't handle it, return empty results
-    if (mimeType === "application/pdf") {
-      console.warn("Vision API cannot process this PDF directly. Consider converting to image first.");
-    }
-
-    return { title: "", date: "", amount: 0, category: "", confidence: null };
+    return { text: "", confidence: null };
   }
 
   const data = await response.json();
 
-  // Check for errors in the response
   if (data.responses?.[0]?.error) {
     console.error("Vision API returned error:", data.responses[0].error);
-    return { title: "", date: "", amount: 0, category: "", confidence: null };
+    return { text: "", confidence: null };
   }
 
   const annotation = data.responses?.[0]?.fullTextAnnotation;
-
   if (!annotation?.text) {
+    return { text: "", confidence: null };
+  }
+
+  const pageConfidence = annotation.pages?.[0]?.confidence ?? null;
+  return { text: annotation.text, confidence: pageConfidence };
+}
+
+function normalizeConfidence(raw: number | null): number | null {
+  if (typeof raw !== "number") return null;
+  const clamped = raw > 1 ? raw / 100 : raw;
+  return Math.round(Math.min(1, clamped) * 100) / 100;
+}
+
+export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResult> {
+  const apiKey = process.env.GOOGLE_VISION_API_KEY;
+  if (!apiKey) {
+    console.warn("GOOGLE_VISION_API_KEY not set, skipping OCR");
+    return { title: "", date: "", amount: 0, category: "", confidence: null };
+  }
+
+  let fullText = "";
+  let bestConfidence: number | null = null;
+
+  if (mimeType === "application/pdf") {
+    // Extract text directly from PDF using pdfjs-dist (no Vision API needed)
+    console.log("Extracting text from PDF using pdfjs-dist...");
+    try {
+      fullText = await extractPdfText(buffer);
+      // No confidence score for direct text extraction (it's exact, not OCR)
+      bestConfidence = fullText ? 1.0 : null;
+      console.log(`PDF text extraction got ${fullText.length} chars`);
+    } catch (error) {
+      console.error("PDF text extraction failed:", error);
+      return { title: "", date: "", amount: 0, category: "", confidence: null };
+    }
+  } else {
+    // Direct image OCR
+    const result = await ocrImage(apiKey, buffer);
+    fullText = result.text;
+    bestConfidence = result.confidence;
+  }
+
+  if (!fullText) {
     console.log("No text detected in document");
     return { title: "", date: "", amount: 0, category: "", confidence: null };
   }
 
-  const fullText: string = annotation.text;
   const lines = fullText.split("\n").filter((l: string) => l.trim());
 
   console.log("OCR extracted text length:", fullText.length);
   console.log("OCR first 500 chars:", fullText.slice(0, 500));
-
-  const pageConfidence = annotation.pages?.[0]?.confidence ?? null;
 
   const result = {
     title: extractTitle(lines),
     date: extractDate(fullText),
     amount: extractAmount(fullText),
     category: extractCategory(fullText),
-    confidence: typeof pageConfidence === "number" ? Math.round(Math.min(1, pageConfidence > 1 ? pageConfidence / 100 : pageConfidence) * 100) / 100 : null
+    confidence: normalizeConfidence(bestConfidence)
   };
 
   console.log("OCR result:", result);

@@ -1447,7 +1447,7 @@ export default function Home() {
 
       {isModalOpen && selectedDocument ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6">
-          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-3xl bg-white p-6 shadow-soft">
+          <div className="flex max-h-[90vh] w-full max-w-5xl flex-col rounded-3xl bg-white p-6 shadow-soft">
             <div className="flex items-center justify-between">
               <h3 className="font-serif text-xl">Document preview</h3>
               <button
@@ -1457,9 +1457,9 @@ export default function Home() {
                 Close
               </button>
             </div>
-            <div className="mt-6 grid gap-6 overflow-y-auto lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="mt-6 grid gap-6 overflow-y-auto lg:grid-cols-[1.3fr_0.7fr]">
               <div className="space-y-2">
-                <div className="relative h-72 overflow-auto rounded-2xl bg-surface">
+                <div className="relative h-[36rem] overflow-auto rounded-2xl bg-surface">
                   {selectedDocument.hasFile ? (
                     isPreviewPdf ? (
                       <object
