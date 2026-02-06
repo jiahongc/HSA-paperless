@@ -60,11 +60,15 @@ export const authOptions: NextAuthOptions = {
           prompt: "consent",
           access_type: "offline",
           response_type: "code",
-          scope: `openid email profile ${DRIVE_SCOPE}`
+          scope: `openid email ${DRIVE_SCOPE}`
         }
       }
     })
   ],
+  pages: {
+    signIn: "/",
+    error: "/"
+  },
   session: { strategy: "jwt" },
   callbacks: {
     async jwt({ token, account }) {

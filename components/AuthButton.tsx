@@ -27,7 +27,7 @@ export default function AuthButton() {
   return (
     <button
       className="rounded-full bg-ink px-4 py-2 text-white shadow-soft"
-      onClick={() => signIn("google")}
+      onClick={() => signIn("google", { callbackUrl: "/" })}
     >
       Sign in with Google
     </button>

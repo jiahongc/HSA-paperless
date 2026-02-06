@@ -38,12 +38,6 @@ function sortDocuments(items: Document[]) {
   return [...items].sort((a, b) => b.date.localeCompare(a.date));
 }
 
-function getFirstName(fullName: string | null | undefined): string {
-  if (!fullName) return "";
-  const parts = fullName.trim().split(/\s+/);
-  return parts[0] || "";
-}
-
 function escapeCsvValue(value: string | number | null | undefined) {
   if (value === null || value === undefined) return "";
   const stringValue = String(value);
@@ -169,7 +163,7 @@ export default function Home() {
   const openManualEntry = () => {
     setManualError(null);
     setManualForm({
-      user: getFirstName(session?.user?.name),
+      user: "",
       title: "",
       category: "",
       date: new Date().toISOString().slice(0, 10),
@@ -555,13 +549,11 @@ export default function Home() {
 
   const availableUsers = useMemo(() => {
     const users = new Set<string>();
-    const firstName = getFirstName(session?.user?.name);
-    if (firstName) users.add(firstName);
     documents.forEach((doc) => {
       if (doc.user?.trim()) users.add(doc.user.trim());
     });
     return Array.from(users).sort();
-  }, [documents, session?.user?.name]);
+  }, [documents]);
 
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -606,15 +598,92 @@ export default function Home() {
           <div className="pointer-events-none absolute top-40 left-10 h-72 w-72 rounded-full bg-sage/25 blur-2xl" />
           <div className="pointer-events-none absolute bottom-0 right-20 h-64 w-64 rounded-full bg-sky/25 blur-2xl" />
 
-          <main className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-6 px-6 pb-24 pt-16 text-center">
+          <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center gap-6 px-6 pb-24 pt-32 text-center">
             <h1 className="font-serif text-5xl leading-tight tracking-tight sm:text-6xl lg:text-7xl">
               HSA Paperless
             </h1>
             <p className="max-w-xl text-sm sm:text-base" style={{ color: "#4b453f" }}>
-              Save documents now and reimburse yourself anytime in the future. Organize everything in
-              a clean dashboard with files stored securely in your own Google Drive.
+              Save medical documents now and reimburse yourself whenever you choose.
+              Track every expense in a clean dashboard with smart OCR autofill.
+              All files stay securely in your own Google Drive — nothing on our servers.
             </p>
             <AuthButton />
+
+            <div className="mt-16 w-full max-w-3xl space-y-10 text-left text-sm" style={{ color: "#4b453f" }}>
+              <section className="space-y-3">
+                <h2 className="text-center font-serif text-2xl text-ink">Why this app exists</h2>
+                <div className="rounded-2xl bg-white/60 p-5">
+                  <ul className="list-disc space-y-2 pl-5">
+                    <li>Track expenses as you spend</li>
+                    <li>Store documents digitally</li>
+                    <li>Mark reimbursements when they clear</li>
+                    <li>Export totals for tax time</li>
+                    <li>Stay organized for audits</li>
+                    <li>Know exactly how much you can reimburse tax-free at any time</li>
+                    <li>See your unreimbursed balance in one place</li>
+                  </ul>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h2 className="text-center font-serif text-2xl text-ink">Privacy and data storage</h2>
+                <div className="rounded-2xl bg-white/60 p-5">
+                  <p className="text-xs uppercase tracking-[0.2em]">Privacy-first design</p>
+                  <p className="mt-2 text-ink">
+                    Your documents and files stay in your own Google Drive. You retain full
+                    ownership of your data.
+                  </p>
+                  <p className="mt-3 text-xs uppercase tracking-[0.2em]">Where files are stored</p>
+                  <p className="mt-2">
+                    Files are stored in a hidden app data folder in your Google Drive that only
+                    this app can access. The metadata file and uploaded files are organized by month.
+                    This folder is not visible in your regular Drive interface but is included
+                    in your Google account storage quota.
+                  </p>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h2 className="text-center font-serif text-2xl text-ink">Common questions</h2>
+                <div className="rounded-2xl bg-white/60 p-5 space-y-6">
+                  <div>
+                    <p className="font-semibold text-ink">Can I reimburse a bill from years ago?</p>
+                    <p className="mt-2">
+                      Yes, if the expense happened after your HSA was opened and you kept the
+                      document. There is no time limit.
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-ink">What if I change HSA providers or jobs?</p>
+                    <p className="mt-2">
+                      The HSA is yours, not your employer&apos;s. Your documents stay in your own Google
+                      Drive, so nothing is lost.
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-ink">What if I accidentally use HSA funds on something not qualified?</p>
+                    <p className="mt-2">
+                      That amount can be subject to income tax and an additional penalty. Keep
+                      clean records and reimburse correctly.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="flex items-center justify-center gap-2 pt-4 text-sm" style={{ color: "#4b453f" }}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                  <path d="M12 1.5C6.48 1.5 2 5.98 2 11.5c0 4.42 2.87 8.17 6.84 9.49.5.09.68-.22.68-.48 0-.24-.01-.88-.01-1.73-2.78.6-3.37-1.34-3.37-1.34-.46-1.17-1.12-1.48-1.12-1.48-.91-.62.07-.6.07-.6 1.01.07 1.54 1.04 1.54 1.04.9 1.55 2.36 1.1 2.94.84.09-.65.35-1.1.64-1.35-2.22-.25-4.56-1.11-4.56-4.96 0-1.1.39-2 1.03-2.71-.1-.25-.45-1.28.1-2.66 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.8c.85 0 1.71.12 2.51.35 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.41.1 2.66.64.71 1.03 1.61 1.03 2.71 0 3.86-2.34 4.7-4.57 4.95.36.31.69.93.69 1.88 0 1.36-.01 2.45-.01 2.78 0 .27.18.58.69.48A10.01 10.01 0 0 0 22 11.5C22 5.98 17.52 1.5 12 1.5z" />
+                </svg>
+                <a
+                  href="https://github.com/jiahongc/HSA-paperless"
+                  className="underline-offset-4 hover:underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View on GitHub
+                </a>
+              </section>
+            </div>
           </main>
         </div>
       </div>
@@ -667,7 +736,7 @@ export default function Home() {
           </nav>
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-white/70 px-4 py-2 text-sm text-muted shadow-soft backdrop-blur">
-              {session.user?.name ?? "Signed in"}
+              {session.user?.email ?? "Signed in"}
             </div>
             <AuthButton />
           </div>
@@ -1192,21 +1261,23 @@ export default function Home() {
               <div className="mt-8 space-y-10 text-sm text-muted">
                 <section className="space-y-3">
                   <h3 className="text-lg font-semibold text-ink">Why this dashboard exists</h3>
-                  <ul className="list-disc space-y-2 pl-5">
-                    <li>Track expenses as you spend</li>
-                    <li>Store documents digitally</li>
-                    <li>Mark reimbursements when they clear</li>
-                    <li>Export totals for tax time</li>
-                    <li>Stay organized for audits</li>
-                    <li>Know exactly how much you can reimburse tax free at any time</li>
-                    <li>See your unreimbursed balance in one place</li>
-                  </ul>
+                  <div className="rounded-2xl bg-base p-4">
+                    <ul className="list-disc space-y-2 pl-5">
+                      <li>Track expenses as you spend</li>
+                      <li>Store documents digitally</li>
+                      <li>Mark reimbursements when they clear</li>
+                      <li>Export totals for tax time</li>
+                      <li>Stay organized for audits</li>
+                      <li>Know exactly how much you can reimburse tax-free at any time</li>
+                      <li>See your unreimbursed balance in one place</li>
+                    </ul>
+                  </div>
                 </section>
 
                 <section className="space-y-3">
                   <h3 className="text-lg font-semibold text-ink">Privacy and data storage</h3>
                   <div className="rounded-2xl bg-base p-4 text-ink">
-                    <p className="text-xs uppercase tracking-[0.2em]">Privacy first design</p>
+                    <p className="text-xs uppercase tracking-[0.2em]">Privacy-first design</p>
                     <p className="mt-2">
                       Your documents and files stay in your own Google Drive. You retain full
                       ownership of your data.
@@ -1214,8 +1285,7 @@ export default function Home() {
                     <p className="mt-3 text-xs uppercase tracking-[0.2em]">Where files are stored</p>
                     <p className="mt-2 text-sm text-muted">
                       Files are stored in a hidden app data folder in your Google Drive that only
-                      this app can access. The metadata file (documents.json) and uploaded files
-                      are organized by month in a &quot;documents&quot; folder within this app data space.
+                      this app can access. The metadata file and uploaded files are organized by month.
                       This folder is not visible in your regular Drive interface but is included
                       in your Google account storage quota.
                     </p>
@@ -1224,28 +1294,28 @@ export default function Home() {
 
                 <section className="space-y-3">
                   <h3 className="text-lg font-semibold text-ink">Common questions</h3>
-                  <div className="space-y-4">
-                    <div className="rounded-2xl bg-base p-4">
+                  <div className="rounded-2xl bg-base p-4 space-y-6">
+                    <div>
                       <p className="font-semibold text-ink">
-                        Can I reimburse a bill from years ago
+                        Can I reimburse a bill from years ago?
                       </p>
                       <p className="mt-2 text-sm text-muted">
                         Yes, if the expense happened after your HSA was opened and you kept the
                         document. There is no time limit.
                       </p>
                     </div>
-                    <div className="rounded-2xl bg-base p-4">
+                    <div>
                       <p className="font-semibold text-ink">
-                        What if I change HSA providers or jobs
+                        What if I change HSA providers or jobs?
                       </p>
                       <p className="mt-2 text-sm text-muted">
-                        The HSA is yours, not your employer. Your documents stay in your own Google
+                        The HSA is yours, not your employer&apos;s. Your documents stay in your own Google
                         Drive, so nothing is lost.
                       </p>
                     </div>
-                    <div className="rounded-2xl bg-base p-4">
+                    <div>
                       <p className="font-semibold text-ink">
-                        What if I accidentally use HSA funds on something not qualified
+                        What if I accidentally use HSA funds on something not qualified?
                       </p>
                       <p className="mt-2 text-sm text-muted">
                         That amount can be subject to income tax and an additional penalty. Keep
@@ -1313,7 +1383,7 @@ export default function Home() {
                   className="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-3 py-2"
                   value={
                     manualForm.user === ""
-                      ? getFirstName(session?.user?.name)
+                      ? ""
                       : availableUsers.includes(manualForm.user)
                         ? manualForm.user
                         : "_custom"
@@ -1326,6 +1396,7 @@ export default function Home() {
                     }));
                   }}
                 >
+                  <option value="" disabled>Select or add a name</option>
                   {availableUsers.map((u) => (
                     <option key={u} value={u}>{u}</option>
                   ))}
@@ -1565,7 +1636,7 @@ export default function Home() {
                     className="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-3 py-2"
                     value={
                       editForm.user === ""
-                        ? getFirstName(session?.user?.name)
+                        ? ""
                         : availableUsers.includes(editForm.user)
                           ? editForm.user
                           : "_custom"
@@ -1578,6 +1649,7 @@ export default function Home() {
                       }));
                     }}
                   >
+                    <option value="" disabled>Select or add a name</option>
                     {availableUsers.map((u) => (
                       <option key={u} value={u}>{u}</option>
                     ))}
@@ -1701,20 +1773,29 @@ export default function Home() {
                     />
                   </div>
                 </div>
-                <div className="flex justify-end gap-3 pt-2">
+                <div className="flex justify-between gap-3 pt-2">
                   <button
-                    className="rounded-full border border-ink/10 px-4 py-2 text-sm"
-                    onClick={() => setIsModalOpen(false)}
+                    className="rounded-full border border-coral/30 px-4 py-2 text-sm text-coral disabled:opacity-40"
+                    disabled={busyDocId === selectedDocument.id}
+                    onClick={() => handleDeleteDocument(selectedDocument)}
                   >
-                    Close
+                    Discard
                   </button>
-                  <button
-                    className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-                    onClick={handleUpdateDocument}
-                    disabled={isUpdatingDocument}
-                  >
-                    {isUpdatingDocument ? "Saving..." : "Save changes"}
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      className="rounded-full border border-ink/10 px-4 py-2 text-sm"
+                      onClick={() => setIsModalOpen(false)}
+                    >
+                      Close
+                    </button>
+                    <button
+                      className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                      onClick={handleUpdateDocument}
+                      disabled={isUpdatingDocument}
+                    >
+                      {isUpdatingDocument ? "Saving..." : "Save changes"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

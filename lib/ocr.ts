@@ -1,31 +1,49 @@
 const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 const MAX_PDF_PAGES = 10;
 
-async function extractPdfText(buffer: Buffer): Promise<string> {
+async function extractPdfPages(buffer: Buffer): Promise<string[]> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
   const data = new Uint8Array(buffer);
   const doc = await pdfjsLib.getDocument({ data, useSystemFonts: true, isEvalSupported: false, disableFontFace: true }).promise;
 
   const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES);
-  const texts: string[] = [];
+  const pages: string[] = [];
 
   try {
     for (let i = 1; i <= pageCount; i++) {
       const page = await doc.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items
-        .filter((item) => "str" in item)
-        .map((item) => (item as { str: string }).str)
-        .join(" ");
-      if (pageText.trim()) {
-        texts.push(pageText);
+      const items = content.items.filter(
+        (item): item is typeof item & { str: string; transform: number[] } =>
+          "str" in item && "transform" in item
+      );
+
+      if (items.length === 0) continue;
+
+      // Build lines using Y-position to detect line breaks
+      let lastY: number | null = null;
+      const parts: string[] = [];
+      for (const item of items) {
+        const y = item.transform[5]; // ty = vertical position
+        if (lastY !== null && Math.abs(y - lastY) > 3) {
+          parts.push("\n");
+        } else if (parts.length > 0 && !parts[parts.length - 1].endsWith("\n")) {
+          parts.push(" ");
+        }
+        parts.push(item.str);
+        lastY = y;
+      }
+
+      const pageText = parts.join("").trim();
+      if (pageText) {
+        pages.push(pageText);
       }
     }
   } finally {
     await doc.destroy();
   }
-  return texts.join("\n");
+  return pages;
 }
 
 type OcrResult = {
@@ -221,6 +239,23 @@ const AMOUNT_KEYWORDS = [
   { keyword: "you owe", priority: 9 },
   { keyword: "pay this amount", priority: 9 },
   { keyword: "please pay", priority: 9 },
+  { keyword: "your share", priority: 10 },
+  { keyword: "member responsibility", priority: 10 },
+  { keyword: "member owes", priority: 10 },
+  { keyword: "patient owes", priority: 10 },
+  { keyword: "you pay", priority: 9 },
+  { keyword: "amt due", priority: 8 },
+  { keyword: "what you owe", priority: 10 },
+  { keyword: "out of pocket", priority: 9 },
+  { keyword: "out-of-pocket", priority: 9 },
+  { keyword: "patient portion", priority: 9 },
+  { keyword: "member share", priority: 9 },
+  { keyword: "amount not covered", priority: 8 },
+  { keyword: "not covered", priority: 6 },
+  { keyword: "remaining balance", priority: 8 },
+  { keyword: "estimated cost", priority: 7 },
+  { keyword: "billed to patient", priority: 9 },
+  { keyword: "charged to you", priority: 9 },
   { keyword: "amount due", priority: 8 },
   { keyword: "total due", priority: 8 },
   { keyword: "balance due", priority: 8 },
@@ -402,21 +437,20 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
 
   let fullText = "";
   let bestConfidence: number | null = null;
+  let pageTexts: string[] = [];
 
   if (mimeType === "application/pdf") {
-    // Extract text directly from PDF using pdfjs-dist (no Vision API needed)
     console.log("Extracting text from PDF using pdfjs-dist...");
     try {
-      fullText = await extractPdfText(buffer);
-      // No confidence score for direct text extraction (it's exact, not OCR)
+      pageTexts = await extractPdfPages(buffer);
+      fullText = pageTexts.join("\n");
       bestConfidence = fullText ? 1.0 : null;
-      console.log(`PDF text extraction got ${fullText.length} chars`);
+      console.log(`PDF text extraction got ${pageTexts.length} pages, ${fullText.length} chars`);
     } catch (error) {
       console.error("PDF text extraction failed:", error);
       return { title: "", date: "", amount: 0, category: "", confidence: null };
     }
   } else {
-    // Direct image OCR
     const result = await ocrImage(apiKey, buffer);
     fullText = result.text;
     bestConfidence = result.confidence;
@@ -432,10 +466,31 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
   console.log("OCR extracted text length:", fullText.length);
   console.log("OCR first 500 chars:", fullText.slice(0, 500));
 
+  // For multi-page PDFs, run amount extraction per-page and pick the best
+  // (keyword proximity works better within a single page)
+  let bestAmount = extractAmount(fullText);
+  if (pageTexts.length > 1) {
+    let bestPagePriority = -1;
+    for (const pageText of pageTexts) {
+      const pageAmount = extractAmount(pageText);
+      if (pageAmount <= 0) continue;
+      // Re-run to check priority — use keyword density as a proxy
+      const lower = pageText.toLowerCase();
+      let pagePriority = 0;
+      for (const { keyword, priority } of AMOUNT_KEYWORDS) {
+        if (lower.includes(keyword)) pagePriority += priority;
+      }
+      if (pagePriority > bestPagePriority) {
+        bestPagePriority = pagePriority;
+        bestAmount = pageAmount;
+      }
+    }
+  }
+
   const result = {
     title: extractTitle(lines),
     date: extractDate(fullText),
-    amount: extractAmount(fullText),
+    amount: bestAmount,
     category: extractCategory(fullText),
     confidence: normalizeConfidence(bestConfidence)
   };
