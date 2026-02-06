@@ -75,6 +75,8 @@ export default function Home() {
   const [manualError, setManualError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isUpdatingDocument, setIsUpdatingDocument] = useState(false);
+  const [busyDocId, setBusyDocId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [editForm, setEditForm] = useState({
     user: "",
     title: "",
@@ -282,6 +284,8 @@ export default function Home() {
   };
 
   const handleToggleReimbursed = async (doc: Document) => {
+    if (busyDocId) return;
+    setBusyDocId(doc.id);
     setActionError(null);
     const nextReimbursed = !doc.reimbursed;
     const nextReimbursedDate = nextReimbursed
@@ -325,15 +329,19 @@ export default function Home() {
       }
     } catch {
       setActionError("Update failed. Please try again.");
+    } finally {
+      setBusyDocId(null);
     }
   };
 
   const handleDeleteDocument = async (doc: Document) => {
+    if (busyDocId) return;
     const confirmed = window.confirm(
       `Delete "${doc.title}"? This cannot be undone.`
     );
     if (!confirmed) return;
 
+    setBusyDocId(doc.id);
     setActionError(null);
     try {
       const response = await fetch(`/api/documents/${doc.id}`, {
@@ -353,6 +361,8 @@ export default function Home() {
       }
     } catch {
       setActionError("Delete failed. Please try again.");
+    } finally {
+      setBusyDocId(null);
     }
   };
 
@@ -411,6 +421,8 @@ export default function Home() {
   };
 
   const handleExportDocuments = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
     try {
       const response = await fetch("/api/documents/export");
       if (response.status === 401) {
@@ -432,6 +444,8 @@ export default function Home() {
     } catch (error) {
       console.error("Failed to export documents", error);
       setActionError("Failed to export documents. Please try again.");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -828,9 +842,9 @@ export default function Home() {
                     <button
                       className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
                       onClick={handleExportDocuments}
-                      disabled={documents.filter((d) => d.hasFile).length === 0}
+                      disabled={isExporting || documents.filter((d) => d.hasFile).length === 0}
                     >
-                      Export Files
+                      {isExporting ? "Exporting…" : "Export Files"}
                     </button>
                     <button
                       className="rounded-full border border-coral/30 bg-white px-4 py-2 text-sm font-semibold text-coral disabled:opacity-40"
@@ -899,6 +913,7 @@ export default function Home() {
                                 }`}
                                 title="Toggle reimbursed status"
                                 onClick={() => handleToggleReimbursed(document)}
+                                disabled={busyDocId === document.id}
                                 aria-pressed={document.reimbursed}
                               >
                                 {document.reimbursed ? "REIMBURSED" : "NOT REIMBURSED"}
@@ -920,10 +935,11 @@ export default function Home() {
                                   Download
                                 </button>
                                 <button
-                                  className="rounded-full border border-ink/10 px-3 py-1 text-xs"
+                                  className="rounded-full border border-ink/10 px-3 py-1 text-xs disabled:opacity-40"
+                                  disabled={busyDocId === document.id}
                                   onClick={() => handleDeleteDocument(document)}
                                 >
-                                  Delete
+                                  {busyDocId === document.id ? "…" : "Delete"}
                                 </button>
                               </div>
                             </td>

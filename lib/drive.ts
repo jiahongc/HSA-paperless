@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { google } from "googleapis";
 import type { drive_v3 } from "googleapis";
@@ -11,7 +12,7 @@ const DOCUMENTS_FOLDER_NAME = "documents";
 const writeLocks = new Map<string, Promise<void>>();
 
 async function withWriteLock<T>(accessToken: string, fn: () => Promise<T>): Promise<T> {
-  const key = accessToken.slice(0, 16);
+  const key = createHash("sha256").update(accessToken).digest("hex").slice(0, 16);
   const prev = writeLocks.get(key) ?? Promise.resolve();
   let resolve: () => void;
   const next = new Promise<void>((r) => { resolve = r; });
