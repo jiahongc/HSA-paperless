@@ -21,15 +21,16 @@ That's it — no accounts to create and no extra setup.
 
 ## Features
 - Google login
-- Multi-file upload with drag and drop
+- Multi-file upload with drag and drop (JPG, PNG, WebP, PDF; 10 MB per file limit)
 - OCR autofill (Google Cloud Vision)
 - Editable document titles and categories
 - User field with custom name support
 - Reimbursement toggle with optional reimbursed date
 - Search across title, user, category, notes
-- Document preview modal with inline editing
+- Document preview modal with inline editing and image zoom
 - Download documents directly from Drive
-- Dashboard KPIs (Total, Reimbursed, Not Reimbursed)
+- Dashboard KPIs (Total, Not Reimbursed, Reimbursed) with year and user filters
+- Notes column in document table
 - Export CSV
 - Export all files as ZIP
 - Clear all documents
@@ -48,7 +49,7 @@ Example metadata:
     {
       "id": "uuid-here",
       "fileId": "drive_file_id_here",
-      "filename": "2026-02-04_cvs-prescription.jpg",
+      "filename": "cvs-prescription.jpg",
       "hasFile": true,
       "user": "John",
       "title": "CVS Prescription",
@@ -86,6 +87,9 @@ See [SETUP.md](SETUP.md) for detailed Google Cloud configuration.
 - Metadata lives only in the user's Drive.
 - Files are stored in a hidden app data folder only this app can access.
 - Users can revoke access at any time.
+- Upload validation enforces file type (JPG, PNG, WebP, PDF) and size (10 MB) limits.
+- File preview restricted to safe MIME types with `X-Content-Type-Options: nosniff`.
+- Write lock prevents concurrent metadata corruption.
 
 ## Roadmap
 - Bulk edit

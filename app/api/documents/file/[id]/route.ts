@@ -4,8 +4,15 @@ import { authOptions } from "../../../../../lib/auth";
 import { getDocumentFile, readDocumentsFile } from "../../../../../lib/drive";
 import { isAuthError } from "../../../../../lib/errors";
 
+const SAFE_INLINE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf"
+]);
+
 function safeFilename(filename: string) {
-  return filename.replace(/"/g, "");
+  return filename.replace(/["\r\n\\]/g, "");
 }
 
 export async function GET(
@@ -27,10 +34,19 @@ export async function GET(
 
     const file = await getDocumentFile(session.accessToken, entry.fileId);
 
+    // Only allow safe MIME types for inline rendering; force download for anything else
+    const contentType = SAFE_INLINE_TYPES.has(file.mimeType)
+      ? file.mimeType
+      : "application/octet-stream";
+    const disposition = SAFE_INLINE_TYPES.has(file.mimeType)
+      ? `inline; filename="${safeFilename(file.filename)}"`
+      : `attachment; filename="${safeFilename(file.filename)}"`;
+
     return new NextResponse(file.buffer, {
       headers: {
-        "Content-Type": file.mimeType,
-        "Content-Disposition": `inline; filename="${safeFilename(file.filename)}"`,
+        "Content-Type": contentType,
+        "Content-Disposition": disposition,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, max-age=0, no-store"
       }
     });

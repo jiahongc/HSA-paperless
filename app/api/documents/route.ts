@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../../lib/auth";
-import { readDocumentsFile, writeDocumentsFile } from "../../../lib/drive";
+import { readDocumentsFile, writeDocumentsFile, readModifyWriteDocuments } from "../../../lib/drive";
+
 import { isAuthError } from "../../../lib/errors";
 import type { Document, DocumentsFile } from "../../../types/documents";
 
@@ -30,8 +31,26 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const body = (await request.json()) as DocumentsFile;
-    await writeDocumentsFile(session.accessToken, body);
+    const body = (await request.json()) as unknown;
+
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !("documents" in body) ||
+      !Array.isArray((body as DocumentsFile).documents)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid data: must include a documents array" },
+        { status: 400 }
+      );
+    }
+
+    const validated: DocumentsFile = {
+      version: (body as DocumentsFile).version ?? 1,
+      documents: (body as DocumentsFile).documents
+    };
+
+    await writeDocumentsFile(session.accessToken, validated);
   } catch (error) {
     if (isAuthError(error)) {
       return NextResponse.json({ error: "InvalidCredentials" }, { status: 401 });
@@ -51,11 +70,10 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as Partial<Document>;
-    const data = await readDocumentsFile(session.accessToken);
 
     const now = new Date();
     const entry: Document = {
-      id: body.id ?? crypto.randomUUID(),
+      id: crypto.randomUUID(),
       fileId: body.fileId ?? null,
       filename: body.filename ?? null,
       hasFile: body.hasFile ?? false,
@@ -67,12 +85,13 @@ export async function POST(request: Request) {
       notes: body.notes ?? "",
       reimbursed: body.reimbursed ?? false,
       reimbursedDate: body.reimbursedDate ?? null,
-      createdAt: body.createdAt ?? now.toISOString(),
+      createdAt: now.toISOString(),
       ocrConfidence: body.ocrConfidence ?? null
     };
 
-    data.documents = [...data.documents, entry];
-    await writeDocumentsFile(session.accessToken, data);
+    await readModifyWriteDocuments(session.accessToken, (data) => {
+      data.documents.push(entry);
+    });
 
     return NextResponse.json(entry);
   } catch (error) {

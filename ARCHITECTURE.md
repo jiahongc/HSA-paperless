@@ -28,7 +28,7 @@ This document outlines the system design, data model, and implementation plan fo
 
 ## Google Drive Storage Model
 **Hidden Google Drive folder (appDataFolder):**
-- `documents/YYYY-MM/<date>_<title-slug>.<ext>`
+- `documents/YYYY-MM/<original-filename>.<ext>`
 - `documents.json`
 
 **Why appDataFolder:**
@@ -44,7 +44,7 @@ This document outlines the system design, data model, and implementation plan fo
     {
       "id": "uuid-here",
       "fileId": "drive_file_id_here",
-      "filename": "2026-02-04_cvs-prescription.jpg",
+      "filename": "cvs-prescription.jpg",
       "hasFile": true,
       "user": "John",
       "title": "CVS Prescription",
@@ -99,27 +99,27 @@ Search matches these fields in memory:
 **Dashboard Panels**
 - Upload dropzone with drag-and-drop
 - Manual entry button
-- KPI cards: Total, Reimbursed, Not Reimbursed
+- KPI cards: Total, Not Reimbursed, Reimbursed (with year/user filters)
 - Document table with columns:
-  - Title, User, Category, Date, Amount, Reimbursed, Actions
+  - Title, User, Category, Date, Amount, Reimbursed, Actions, Notes
 - Actions per row: View, Download, Delete
 - Export options: CSV, ZIP of all files
 - Clear All button
 
 **Document Preview Modal**
-- File preview (images and PDFs)
+- File preview (images with zoom controls, PDFs)
 - Editable fields with dropdowns for User and Category
 - Custom option for new users/categories
 - Save Changes closes modal
 
 ## API Routes
 - `GET /api/documents` - Load documents.json
-- `PUT /api/documents` - Update documents.json
-- `POST /api/documents` - Create manual entry
-- `PATCH /api/documents/[id]` - Update single document
-- `DELETE /api/documents/[id]` - Delete document and file
-- `POST /api/documents/upload` - Upload files with OCR
-- `GET /api/documents/file/[id]` - Stream file for preview
+- `PUT /api/documents` - Update documents.json (validates documents array)
+- `POST /api/documents` - Create manual entry (server-generated id/createdAt)
+- `PATCH /api/documents/[id]` - Update single document (write-locked)
+- `DELETE /api/documents/[id]` - Delete document and file (write-locked)
+- `POST /api/documents/upload` - Upload files with OCR (type + size validation, write-locked)
+- `GET /api/documents/file/[id]` - Stream file for preview (safe MIME types only)
 - `GET /api/documents/download/[id]` - Download file
 - `GET /api/documents/export` - Download ZIP of all files
 
@@ -129,11 +129,24 @@ Search matches these fields in memory:
 - Centered document preview modal
 - Rounded corners and soft shadows
 
+## Concurrency & Write Safety
+- All metadata writes go through `readModifyWriteDocuments` in `lib/drive.ts`, which acquires a per-user in-process write lock before the read-modify-write cycle.
+- Token refresh uses a singleton promise guard to prevent concurrent refresh calls from racing.
+
+## Upload Validation
+- Server-side file type check: only JPEG, PNG, WebP, and PDF are accepted.
+- Server-side file size limit: 10 MB per file.
+- Document IDs and `createdAt` timestamps are always server-generated (not client-supplied).
+
 ## Security & Privacy
 - Documents and metadata never stored on our servers.
 - OAuth scopes limited to drive.appdata + basic profile/email.
 - User can revoke access at any time.
 - Files stored in hidden app data folder.
+- File preview route restricts inline rendering to safe MIME types (images, PDF); unknown types force download.
+- All file-serving routes include `X-Content-Type-Options: nosniff` to prevent MIME sniffing.
+- `Content-Disposition` filenames are sanitized to strip quotes, newlines, and backslashes.
+- Auth error detection covers both HTTP 401 and 403 from Google APIs.
 
 ## Implementation Status
 - [x] Auth + Drive access

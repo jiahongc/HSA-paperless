@@ -3,8 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../../../lib/auth";
 import {
   deleteDocumentFile,
-  readDocumentsFile,
-  writeDocumentsFile
+  readModifyWriteDocuments
 } from "../../../../lib/drive";
 import { isAuthError } from "../../../../lib/errors";
 import type { Document } from "../../../../types/documents";
@@ -69,22 +68,20 @@ export async function PATCH(
 
   try {
     const body = (await request.json()) as Partial<Document>;
-    const data = await readDocumentsFile(session.accessToken);
-    const index = data.documents.findIndex((document) => document.id === params.id);
+    let updated: Document | null = null;
 
-    if (index === -1) {
+    await readModifyWriteDocuments(session.accessToken, (data) => {
+      const index = data.documents.findIndex((document) => document.id === params.id);
+      if (index === -1) return;
+      const existing = data.documents[index];
+      const updates = sanitizeUpdates(body);
+      updated = { ...existing, ...updates };
+      data.documents[index] = updated;
+    });
+
+    if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-
-    const existing = data.documents[index];
-    const updates = sanitizeUpdates(body);
-    const updated: Document = {
-      ...existing,
-      ...updates
-    };
-
-    data.documents[index] = updated;
-    await writeDocumentsFile(session.accessToken, data);
 
     return NextResponse.json(updated);
   } catch (error) {
@@ -106,24 +103,26 @@ export async function DELETE(
   }
 
   try {
-    const data = await readDocumentsFile(session.accessToken);
-    const index = data.documents.findIndex((document) => document.id === params.id);
+    let removed: Document | null = null;
 
-    if (index === -1) {
+    await readModifyWriteDocuments(session.accessToken, (data) => {
+      const index = data.documents.findIndex((document) => document.id === params.id);
+      if (index === -1) return;
+      [removed] = data.documents.splice(index, 1);
+    });
+
+    if (!removed) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const [removed] = data.documents.splice(index, 1);
-
-    if (removed?.hasFile && removed.fileId) {
+    const doc = removed as Document;
+    if (doc.hasFile && doc.fileId) {
       try {
-        await deleteDocumentFile(session.accessToken, removed.fileId);
+        await deleteDocumentFile(session.accessToken, doc.fileId);
       } catch (error) {
         console.error("Failed to delete document file", error);
       }
     }
-
-    await writeDocumentsFile(session.accessToken, data);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

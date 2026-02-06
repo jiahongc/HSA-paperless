@@ -4,7 +4,18 @@ import GoogleProvider from "next-auth/providers/google";
 
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 
-async function refreshAccessToken(token: JWT) {
+// Guard against concurrent token refreshes: only one in-flight refresh per user
+let refreshPromise: Promise<JWT> | null = null;
+
+async function refreshAccessToken(token: JWT): Promise<JWT> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = doRefreshAccessToken(token).finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+async function doRefreshAccessToken(token: JWT) {
   if (!token.refreshToken) {
     return { ...token, error: "MissingRefreshToken" };
   }

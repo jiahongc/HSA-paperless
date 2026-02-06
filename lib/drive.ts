@@ -6,6 +6,27 @@ import type { DocumentsFile } from "../types/documents";
 const DOCUMENTS_METADATA_NAME = "documents.json";
 const DOCUMENTS_FOLDER_NAME = "documents";
 
+// Simple in-process write lock to prevent concurrent read-modify-write races.
+// Keyed by access token so different users don't block each other.
+const writeLocks = new Map<string, Promise<void>>();
+
+async function withWriteLock<T>(accessToken: string, fn: () => Promise<T>): Promise<T> {
+  const key = accessToken.slice(0, 16);
+  const prev = writeLocks.get(key) ?? Promise.resolve();
+  let resolve: () => void;
+  const next = new Promise<void>((r) => { resolve = r; });
+  writeLocks.set(key, next);
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    resolve!();
+    if (writeLocks.get(key) === next) {
+      writeLocks.delete(key);
+    }
+  }
+}
+
 function getDrive(accessToken: string) {
   const auth = new google.auth.OAuth2();
   auth.setCredentials({ access_token: accessToken });
@@ -114,6 +135,23 @@ export async function writeDocumentsFile(
       mimeType: "application/json",
       body: JSON.stringify(data)
     }
+  });
+}
+
+/**
+ * Safely read, modify, and write documents.json under a per-user write lock
+ * to prevent concurrent read-modify-write races.
+ */
+export async function readModifyWriteDocuments(
+  accessToken: string,
+  modify: (data: DocumentsFile) => DocumentsFile | void
+): Promise<DocumentsFile> {
+  return withWriteLock(accessToken, async () => {
+    const data = await readDocumentsFile(accessToken);
+    const result = modify(data);
+    const final = result ?? data;
+    await writeDocumentsFile(accessToken, final);
+    return final;
   });
 }
 

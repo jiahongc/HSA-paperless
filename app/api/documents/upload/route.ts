@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../../../lib/auth";
-import { readDocumentsFile, uploadDocumentFile, writeDocumentsFile } from "../../../../lib/drive";
+import { readModifyWriteDocuments, uploadDocumentFile } from "../../../../lib/drive";
 import { isAuthError } from "../../../../lib/errors";
 import { runOcr } from "../../../../lib/ocr";
 import type { Document } from "../../../../types/documents";
@@ -22,28 +22,25 @@ function titleFromFilename(filename: string) {
   return trimmed || "Untitled document";
 }
 
-function slugify(text: string) {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    || "document";
-}
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf"
+]);
 
-function getExtension(filename: string) {
-  const dot = filename.lastIndexOf(".");
-  return dot >= 0 ? filename.slice(dot) : "";
-}
-
-function buildFilename(date: string, title: string, ext: string, usedNames: Set<string>): string {
-  const base = `${date}_${slugify(title)}${ext}`;
-  if (!usedNames.has(base)) {
-    usedNames.add(base);
-    return base;
+function deduplicateFilename(name: string, usedNames: Set<string>): string {
+  if (!usedNames.has(name)) {
+    usedNames.add(name);
+    return name;
   }
+  const dot = name.lastIndexOf(".");
+  const base = dot >= 0 ? name.slice(0, dot) : name;
+  const ext = dot >= 0 ? name.slice(dot) : "";
   let counter = 1;
   while (true) {
-    const candidate = `${date}_${slugify(title)}_${counter}${ext}`;
+    const candidate = `${base}_${counter}${ext}`;
     if (!usedNames.has(candidate)) {
       usedNames.add(candidate);
       return candidate;
@@ -65,13 +62,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No files" }, { status: 400 });
   }
 
-  try {
-    const data = await readDocumentsFile(session.accessToken);
-    const createdEntries: Document[] = [];
-    const usedNames = new Set(
-      data.documents.map((doc) => doc.filename).filter(Boolean) as string[]
-    );
+  for (const file of files) {
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `File "${file.name}" exceeds the 10 MB size limit` },
+        { status: 400 }
+      );
+    }
+    const mime = file.type.toLowerCase();
+    if (!ALLOWED_TYPES.has(mime)) {
+      return NextResponse.json(
+        { error: `File "${file.name}" has unsupported type "${file.type}". Accepted: JPG, PNG, WebP, PDF` },
+        { status: 400 }
+      );
+    }
+  }
 
+  try {
+    const createdEntries: Document[] = [];
+
+    // Process files and upload to Drive before acquiring the write lock
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
@@ -87,17 +97,15 @@ export async function POST(request: Request) {
 
       const title = ocr.title || titleFromFilename(file.name);
       const docDate = ocr.date || dateValue;
-      const ext = getExtension(file.name);
-      const driveFilename = buildFilename(docDate, title, ext, usedNames);
 
       const upload = await uploadDocumentFile(session.accessToken, {
-        filename: driveFilename,
+        filename: file.name,
         mimeType: file.type || "application/octet-stream",
         buffer,
         folder: toMonthFolder(now)
       });
 
-      const entry: Document = {
+      createdEntries.push({
         id: crypto.randomUUID(),
         fileId: upload.fileId,
         filename: upload.filename,
@@ -112,13 +120,21 @@ export async function POST(request: Request) {
         reimbursedDate: null,
         createdAt: now.toISOString(),
         ocrConfidence: ocr.confidence
-      };
-
-      data.documents.push(entry);
-      createdEntries.push(entry);
+      });
     }
 
-    await writeDocumentsFile(session.accessToken, data);
+    // Use the write lock to safely append new entries to documents.json
+    await readModifyWriteDocuments(session.accessToken, (data) => {
+      const usedNames = new Set(
+        data.documents.map((doc) => doc.filename).filter(Boolean) as string[]
+      );
+      for (const entry of createdEntries) {
+        if (entry.filename) {
+          entry.filename = deduplicateFilename(entry.filename, usedNames);
+        }
+        data.documents.push(entry);
+      }
+    });
 
     return NextResponse.json({ entries: createdEntries });
   } catch (error) {

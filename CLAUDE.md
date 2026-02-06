@@ -41,14 +41,14 @@ The entire metadata file is read on login and all filtering/search happens in-me
 
 ### Auth Flow
 
-Google OAuth via NextAuth.js (JWT strategy). The `drive.appdata` scope grants access only to this app's hidden folder in the user's Drive. Token refresh is handled automatically in the JWT callback (`lib/auth.ts`) with a 60-second buffer before expiration.
+Google OAuth via NextAuth.js (JWT strategy). The `drive.appdata` scope grants access only to this app's hidden folder in the user's Drive. Token refresh is handled automatically in the JWT callback (`lib/auth.ts`) with a 60-second buffer before expiration and a singleton promise guard to prevent concurrent refresh races.
 
 ### Key Modules
 
 - **`lib/auth.ts`** — NextAuth config with Google provider, JWT callbacks, token refresh logic
-- **`lib/drive.ts`** — All Google Drive operations: folder creation, metadata read/write, file upload/download/delete
+- **`lib/drive.ts`** — All Google Drive operations: folder creation, metadata read/write with per-user write lock, file upload/download/delete
 - **`lib/ocr.ts`** — Google Cloud Vision API integration; extracts title, date, amount, category from uploaded documents
-- **`lib/errors.ts`** — Shared `isAuthError` helper used by all API routes
+- **`lib/errors.ts`** — Shared `isAuthError` helper (checks 401 and 403) used by all API routes
 - **`app/page.tsx`** — Main dashboard (single large client component with all UI state)
 - **`types/documents.ts`** — `Document` and `DocumentsFile` type definitions
 
@@ -60,9 +60,9 @@ All under `app/api/`:
 |---|---|---|
 | `documents/route.ts` | GET, POST, PUT | List docs, create manual entry, bulk update metadata |
 | `documents/[id]/route.ts` | PATCH, DELETE | Update/delete single document |
-| `documents/upload/route.ts` | POST | Multi-file upload with OCR (Vision API) |
-| `documents/download/[id]/route.ts` | GET | Download file (Content-Disposition: attachment) |
-| `documents/file/[id]/route.ts` | GET | Preview file (Content-Disposition: inline) |
+| `documents/upload/route.ts` | POST | Multi-file upload with OCR; validates type (JPG/PNG/WebP/PDF) and size (10 MB) |
+| `documents/download/[id]/route.ts` | GET | Download file (Content-Disposition: attachment, nosniff) |
+| `documents/file/[id]/route.ts` | GET | Preview file (safe MIME types inline, others force download, nosniff) |
 | `auth/[...nextauth]/route.ts` | * | NextAuth handler |
 
 All document API routes require an authenticated session. Auth failures return 401; Drive API errors return 500.
@@ -70,10 +70,10 @@ All document API routes require an authenticated session. Auth failures return 4
 ### Frontend
 
 The dashboard (`app/page.tsx`) is a single `"use client"` component with:
-- Two tabs: Dashboard and HSA Education
-- KPI cards (total spend, reimbursed, not reimbursed), document table
-- Upload dropzone, document preview modal, manual entry form
-- In-memory search across title, category, notes, filename
+- Three tabs: Dashboard, About HSA, and Q&A
+- KPI cards (total spend, not reimbursed, reimbursed) with year/user filters, document table with notes column
+- Upload dropzone, document preview modal with image zoom, manual entry form
+- In-memory search across title, user, category, notes, filename
 - ~20 `useState` hooks for local state management
 
 ### Styling
@@ -88,7 +88,7 @@ Tailwind CSS with a custom Anthropic-inspired color palette defined in `tailwind
 - **Single JSON metadata file** — avoids Drive API scanning; fast dashboard load
 - **`drive.appdata` scope** — files are hidden from the user's normal Drive view and only accessible by this app
 - **OCR on upload only** — Google Cloud Vision runs once via REST API; extracts title, date, amount, category using regex/keyword heuristics; failures are non-blocking (falls back to empty fields)
-- **Drive filenames** — uploaded files are renamed to `date_title.extension` format (e.g., `2026-02-05_cvs-prescription.jpg`); duplicates get numeric suffixes
+- **Drive filenames** — uploaded files keep their original filename; duplicates get numeric suffixes (e.g., `receipt.jpg`, `receipt_1.jpg`)
 - **Category suggestions** — `CATEGORIES` constant in `app/page.tsx` with common HSA categories; select dropdown with custom input fallback
 - **Post-upload review** — after upload, the first document's edit modal opens automatically so the user can verify OCR-extracted fields
 - **Manual entries supported** — `hasFile: false` documents have no attached file

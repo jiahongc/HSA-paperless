@@ -5,7 +5,7 @@ import { getDocumentFile, readDocumentsFile } from "../../../../../lib/drive";
 import { isAuthError } from "../../../../../lib/errors";
 
 function safeFilename(filename: string) {
-  return filename.replace(/"/g, "");
+  return filename.replace(/["\r\n\\]/g, "");
 }
 
 export async function GET(
@@ -31,6 +31,7 @@ export async function GET(
       headers: {
         "Content-Type": file.mimeType,
         "Content-Disposition": `attachment; filename="${safeFilename(file.filename)}"`,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, max-age=0, no-store"
       }
     });

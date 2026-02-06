@@ -97,6 +97,7 @@ export default function Home() {
   });
   const [filterYear, setFilterYear] = useState<string>("all");
   const [filterUser, setFilterUser] = useState<string>("all");
+  const [previewZoom, setPreviewZoom] = useState(1);
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
@@ -188,7 +189,7 @@ export default function Home() {
         title: manualForm.title.trim() || "Untitled document",
         category: manualForm.category.trim(),
         date: manualForm.date,
-        amount: Number(manualForm.amount) || 0,
+        amount: parseFloat(manualForm.amount) || 0,
         notes: manualForm.notes.trim(),
         reimbursed: manualForm.reimbursed,
         reimbursedDate: manualForm.reimbursedDate || null,
@@ -219,6 +220,7 @@ export default function Home() {
 
   const openDocumentModal = (document: Document) => {
     setActionError(null);
+    setPreviewZoom(1);
     setSelectedDocument(document);
     setEditForm({
       user: document.user ?? "",
@@ -247,7 +249,7 @@ export default function Home() {
         title: editForm.title.trim() || "Untitled document",
         category: editForm.category.trim(),
         date: editForm.date,
-        amount: Number(editForm.amount) || 0,
+        amount: parseFloat(editForm.amount) || 0,
         notes: editForm.notes.trim(),
         reimbursed: editForm.reimbursed,
         reimbursedDate: resolvedReimbursedDate
@@ -438,9 +440,24 @@ export default function Home() {
 
     setActionError(null);
     try {
-      for (const doc of documents) {
-        await fetch(`/api/documents/${doc.id}`, { method: "DELETE" });
+      // Best-effort delete Drive files first (before clearing metadata)
+      const docsWithFiles = documents.filter((d) => d.hasFile && d.fileId);
+      await Promise.allSettled(
+        docsWithFiles.map((doc) =>
+          fetch(`/api/documents/${doc.id}`, { method: "DELETE" })
+        )
+      );
+
+      // Single bulk write to clear metadata
+      const response = await fetch("/api/documents", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version: 1, documents: [] })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to clear documents");
       }
+
       setDocuments([]);
       setIsModalOpen(false);
       setSelectedDocument(null);
@@ -663,18 +680,18 @@ export default function Home() {
                   </div>
                   <div className="rounded-2xl bg-base p-5">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                      Reimbursed
-                    </p>
-                    <p className="mt-3 text-3xl font-semibold">
-                      {formatCurrency(totals.reimbursed)}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-base p-5">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted">
                       Not reimbursed
                     </p>
                     <p className="mt-3 text-3xl font-semibold">
                       {formatCurrency(totals.pending)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-base p-5">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                      Reimbursed
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold">
+                      {formatCurrency(totals.reimbursed)}
                     </p>
                   </div>
                 </div>
@@ -732,7 +749,10 @@ export default function Home() {
                   }}
                 >
                   {queuedFiles.length === 0 ? (
-                    "Drag and drop documents or PDFs here. Text recognition (OCR) will auto-fill the details."
+                    <div>
+                      <p>Drag and drop documents here. Text recognition (OCR) will auto-fill the details.</p>
+                      <p className="mt-1 text-xs text-muted/70">Accepted formats: JPG, JPEG, PNG, PDF</p>
+                    </div>
                   ) : (
                     <div className="space-y-2 text-ink">
                       <p className="text-sm font-semibold">
@@ -797,7 +817,7 @@ export default function Home() {
                 </div>
 
                 <div className="mt-6 overflow-x-auto rounded-2xl border border-ink/10">
-                  <table className="min-w-[700px] w-full text-sm">
+                  <table className="min-w-[850px] w-full text-sm">
                     <thead className="bg-base text-left text-xs uppercase tracking-[0.2em] text-muted">
                       <tr>
                         <th className="px-4 py-3">Title</th>
@@ -807,24 +827,25 @@ export default function Home() {
                         <th className="px-4 py-3">Amount</th>
                         <th className="px-4 py-3">Reimbursed</th>
                         <th className="px-4 py-3">Actions</th>
+                        <th className="px-4 py-3">Notes</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-ink/5 bg-white">
                       {isLoading ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-6 text-center text-muted">
+                          <td colSpan={8} className="px-4 py-6 text-center text-muted">
                             Loading documents...
                           </td>
                         </tr>
                       ) : loadError ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-6 text-center text-muted">
+                          <td colSpan={8} className="px-4 py-6 text-center text-muted">
                             {loadError}
                           </td>
                         </tr>
                       ) : filteredDocuments.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-10 text-center">
+                          <td colSpan={8} className="px-4 py-10 text-center">
                             <p className="text-muted">
                               {search
                                 ? "No documents match your search."
@@ -854,7 +875,7 @@ export default function Home() {
                                 onClick={() => handleToggleReimbursed(document)}
                                 aria-pressed={document.reimbursed}
                               >
-                                {document.reimbursed ? "Reimbursed" : "Not reimbursed"}
+                                {document.reimbursed ? "REIMBURSED" : "NOT REIMBURSED"}
                               </button>
                             </td>
                             <td className="px-4 py-3">
@@ -879,6 +900,9 @@ export default function Home() {
                                   Delete
                                 </button>
                               </div>
+                            </td>
+                            <td className="px-4 py-3 text-muted max-w-[200px] truncate" title={document.notes}>
+                              {document.notes || "—"}
                             </td>
                           </tr>
                         ))
@@ -1408,30 +1432,64 @@ export default function Home() {
               </button>
             </div>
             <div className="mt-6 grid gap-6 overflow-y-auto lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="flex h-72 items-center justify-center rounded-2xl bg-surface">
-                {selectedDocument.hasFile ? (
-                  isPreviewPdf ? (
-                    <object
-                      data={previewUrl}
-                      type="application/pdf"
-                      className="h-full w-full rounded-2xl"
-                    >
-                      <iframe
-                        src={previewUrl}
-                        title={selectedDocument.title}
+              <div className="space-y-2">
+                <div className="relative h-72 overflow-auto rounded-2xl bg-surface">
+                  {selectedDocument.hasFile ? (
+                    isPreviewPdf ? (
+                      <object
+                        data={previewUrl}
+                        type="application/pdf"
                         className="h-full w-full rounded-2xl"
+                      >
+                        <iframe
+                          src={previewUrl}
+                          title={selectedDocument.title}
+                          className="h-full w-full rounded-2xl"
+                        />
+                      </object>
+                    ) : (
+                      <img
+                        src={previewUrl}
+                        alt={selectedDocument.title}
+                        className="rounded-2xl"
+                        style={{
+                          transform: `scale(${previewZoom})`,
+                          transformOrigin: "top left",
+                          maxWidth: previewZoom <= 1 ? "100%" : "none"
+                        }}
                       />
-                    </object>
+                    )
                   ) : (
-                    <img
-                      src={previewUrl}
-                      alt={selectedDocument.title}
-                      className="h-full w-full rounded-2xl object-contain"
-                    />
-                  )
-                ) : (
-                  <div className="text-sm text-muted">No document file attached.</div>
-                )}
+                    <div className="flex h-full items-center justify-center text-sm text-muted">No document file attached.</div>
+                  )}
+                </div>
+                {selectedDocument.hasFile && !isPreviewPdf ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      className="rounded-full border border-ink/10 px-3 py-1 text-xs disabled:opacity-40"
+                      onClick={() => setPreviewZoom((z) => Math.max(0.25, z - 0.25))}
+                      disabled={previewZoom <= 0.25}
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[3rem] text-center text-xs text-muted">
+                      {Math.round(previewZoom * 100)}%
+                    </span>
+                    <button
+                      className="rounded-full border border-ink/10 px-3 py-1 text-xs disabled:opacity-40"
+                      onClick={() => setPreviewZoom((z) => Math.min(4, z + 0.25))}
+                      disabled={previewZoom >= 4}
+                    >
+                      +
+                    </button>
+                    <button
+                      className="rounded-full border border-ink/10 px-3 py-1 text-xs"
+                      onClick={() => setPreviewZoom(1)}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div className="space-y-4 text-sm">
                 {actionError ? (
