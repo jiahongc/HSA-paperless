@@ -91,7 +91,10 @@ See [SETUP.md](SETUP.md) for detailed Google Cloud configuration.
 - Users can revoke access at any time.
 - Upload validation enforces file type (JPG, PNG, WebP, PDF) and size (10 MB) limits.
 - File preview restricted to safe MIME types with `X-Content-Type-Options: nosniff`.
-- Write lock prevents concurrent metadata corruption.
+- Per-user write lock (SHA-256 hashed key) prevents concurrent metadata corruption.
+- Per-user token refresh guard prevents cross-contamination between sessions.
+- Loading states on destructive actions prevent double-click issues.
+- Modals use `role="dialog"` and `aria-modal` for accessibility.
 
 ## Roadmap
 - Bulk edit

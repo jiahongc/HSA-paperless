@@ -41,7 +41,7 @@ The entire metadata file is read on login and all filtering/search happens in-me
 
 ### Auth Flow
 
-Google OAuth via NextAuth.js (JWT strategy). The `drive.appdata` scope grants access only to this app's hidden folder in the user's Drive. Token refresh is handled automatically in the JWT callback (`lib/auth.ts`) with a 60-second buffer before expiration and a singleton promise guard to prevent concurrent refresh races.
+Google OAuth via NextAuth.js (JWT strategy). The `drive.appdata` scope grants access only to this app's hidden folder in the user's Drive. Token refresh is handled automatically in the JWT callback (`lib/auth.ts`) with a 60-second buffer before expiration and a per-user promise Map (keyed by `token.sub`) to prevent concurrent refresh races.
 
 ### Key Modules
 
