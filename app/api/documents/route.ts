@@ -31,7 +31,12 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const body = (await request.json()) as unknown;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
 
     if (
       !body ||
@@ -69,7 +74,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = (await request.json()) as Partial<Document>;
+    let body: Partial<Document>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
 
     const now = new Date();
     const entry: Document = {

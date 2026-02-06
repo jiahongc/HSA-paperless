@@ -10,19 +10,21 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
   const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES);
   const texts: string[] = [];
 
-  for (let i = 1; i <= pageCount; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items
-      .filter((item) => "str" in item)
-      .map((item) => (item as { str: string }).str)
-      .join(" ");
-    if (pageText.trim()) {
-      texts.push(pageText);
+  try {
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .filter((item) => "str" in item)
+        .map((item) => (item as { str: string }).str)
+        .join(" ");
+      if (pageText.trim()) {
+        texts.push(pageText);
+      }
     }
+  } finally {
+    await doc.destroy();
   }
-
-  await doc.destroy();
   return texts.join("\n");
 }
 

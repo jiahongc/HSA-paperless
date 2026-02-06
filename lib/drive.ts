@@ -38,10 +38,11 @@ async function getOrCreateChildFolderId(
   name: string,
   parentId?: string
 ) {
+  const safeName = name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const parentQuery = parentId ? ` and '${parentId}' in parents` : "";
   const list = await drive.files.list({
     spaces: "appDataFolder",
-    q: `name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentQuery}`,
+    q: `name = '${safeName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentQuery}`,
     fields: "files(id, name)"
   });
 

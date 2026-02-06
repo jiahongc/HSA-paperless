@@ -800,7 +800,7 @@ export default function Home() {
                   type="file"
                   className="hidden"
                   multiple
-                  accept="image/*,application/pdf"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
                   onChange={(event) => handleFiles(event.target.files)}
                 />
               </section>
@@ -1264,7 +1264,7 @@ export default function Home() {
       </div>
 
       {isManualOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6" role="dialog" aria-modal="true">
           <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-soft">
             <div className="flex items-center justify-between">
               <h3 className="font-serif text-xl">Manual entry</h3>
@@ -1446,7 +1446,7 @@ export default function Home() {
       ) : null}
 
       {isModalOpen && selectedDocument ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6" role="dialog" aria-modal="true">
           <div className="flex max-h-[90vh] w-full max-w-5xl flex-col rounded-3xl bg-white p-6 shadow-soft">
             <div className="flex items-center justify-between">
               <h3 className="font-serif text-xl">Document preview</h3>
