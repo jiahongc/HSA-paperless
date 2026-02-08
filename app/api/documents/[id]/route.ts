@@ -1,12 +1,16 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../../../lib/auth";
+import { NextRequest, NextResponse } from "next/server";
 import {
   deleteDocumentFile,
   readModifyWriteDocuments
 } from "../../../../lib/drive";
 import { isAuthError } from "../../../../lib/errors";
+import { getAccessTokenFromRequest } from "../../../../lib/server-auth";
 import type { Document } from "../../../../types/documents";
+
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_AMOUNT = 1_000_000;
+const MAX_SHORT_TEXT = 200;
+const MAX_NOTES_TEXT = 5000;
 
 type DocumentUpdates = Partial<
   Pick<
@@ -22,32 +26,45 @@ type DocumentUpdates = Partial<
   >
 >;
 
+function isDateString(value: unknown): value is string {
+  return typeof value === "string" && DATE_REGEX.test(value);
+}
+
 function sanitizeUpdates(body: Partial<Document>) {
   const updates: DocumentUpdates = {};
 
-  if (typeof body.user === "string") {
+  if (typeof body.user === "string" && body.user.length <= MAX_SHORT_TEXT) {
     updates.user = body.user.trim();
   }
-  if (typeof body.title === "string") {
+  if (typeof body.title === "string" && body.title.length <= MAX_SHORT_TEXT) {
     updates.title = body.title.trim() || "Untitled document";
   }
-  if (typeof body.category === "string") {
+  if (typeof body.category === "string" && body.category.length <= MAX_SHORT_TEXT) {
     updates.category = body.category.trim();
   }
-  if (typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
+  if (isDateString(body.date)) {
     updates.date = body.date;
   }
-  if (typeof body.amount === "number" && Number.isFinite(body.amount)) {
-    updates.amount = body.amount;
+  if (
+    typeof body.amount === "number" &&
+    Number.isFinite(body.amount) &&
+    body.amount >= 0 &&
+    body.amount <= MAX_AMOUNT
+  ) {
+    updates.amount = Math.round(body.amount * 100) / 100;
   }
-  if (typeof body.notes === "string") {
+  if (typeof body.notes === "string" && body.notes.length <= MAX_NOTES_TEXT) {
     updates.notes = body.notes.trim();
   }
   if (typeof body.reimbursed === "boolean") {
     updates.reimbursed = body.reimbursed;
   }
   if ("reimbursedDate" in body) {
-    updates.reimbursedDate = body.reimbursedDate ? body.reimbursedDate : null;
+    if (body.reimbursedDate === null || body.reimbursedDate === "") {
+      updates.reimbursedDate = null;
+    } else if (isDateString(body.reimbursedDate)) {
+      updates.reimbursedDate = body.reimbursedDate;
+    }
   }
 
   if (updates.reimbursed === false && !("reimbursedDate" in updates)) {
@@ -58,11 +75,11 @@ function sanitizeUpdates(body: Partial<Document>) {
 }
 
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const accessToken = await getAccessTokenFromRequest(request);
+  if (!accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -75,7 +92,7 @@ export async function PATCH(
     }
     let updated: Document | null = null;
 
-    await readModifyWriteDocuments(session.accessToken, (data) => {
+    await readModifyWriteDocuments(accessToken, (data) => {
       const index = data.documents.findIndex((document) => document.id === params.id);
       if (index === -1) return;
       const existing = data.documents[index];
@@ -99,18 +116,18 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const accessToken = await getAccessTokenFromRequest(request);
+  if (!accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     let removed: Document | null = null;
 
-    await readModifyWriteDocuments(session.accessToken, (data) => {
+    await readModifyWriteDocuments(accessToken, (data) => {
       const index = data.documents.findIndex((document) => document.id === params.id);
       if (index === -1) return;
       [removed] = data.documents.splice(index, 1);
@@ -123,7 +140,7 @@ export async function DELETE(
     const doc = removed as Document;
     if (doc.hasFile && doc.fileId) {
       try {
-        await deleteDocumentFile(session.accessToken, doc.fileId);
+        await deleteDocumentFile(accessToken, doc.fileId);
       } catch (error) {
         console.error("Failed to delete document file", error);
       }

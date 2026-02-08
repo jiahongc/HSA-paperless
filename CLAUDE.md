@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HSA Paperless is a privacy-first Health Savings Account document tracker. All user documents and metadata are stored exclusively in the user's own Google Drive `appDataFolder` — zero server-side storage.
+HSA Paperless is a privacy-first Health Savings Account document tracker. User documents and metadata are persisted in the user's own Google Drive `appDataFolder` with no separate server-side database.
 
 ## Commands
 

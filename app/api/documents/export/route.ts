@@ -1,19 +1,28 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { NextRequest, NextResponse } from "next/server";
 import archiver from "archiver";
 import { PassThrough } from "stream";
-import { authOptions } from "../../../../lib/auth";
 import { readDocumentsFile, getDocumentFile } from "../../../../lib/drive";
 import { isAuthError } from "../../../../lib/errors";
+import { getAccessTokenFromRequest } from "../../../../lib/server-auth";
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+function sanitizeArchiveEntryName(name: string, fallback: string) {
+  const basename = name.split(/[\\/]/).pop() ?? fallback;
+  const clean = basename
+    .replace(/[\x00-\x1F\x7F]/g, "")
+    .replace(/^\.+/, "")
+    .trim();
+
+  return clean || fallback;
+}
+
+export async function GET(request: NextRequest) {
+  const accessToken = await getAccessTokenFromRequest(request);
+  if (!accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const data = await readDocumentsFile(session.accessToken);
+    const data = await readDocumentsFile(accessToken);
     const documentsWithFiles = data.documents.filter(
       (doc) => doc.hasFile && doc.fileId
     );
@@ -35,8 +44,11 @@ export async function GET() {
     const usedNames = new Set<string>();
     for (const doc of documentsWithFiles) {
       try {
-        const file = await getDocumentFile(session.accessToken, doc.fileId!);
-        let filename = doc.filename || file.filename || `${doc.id}.bin`;
+        const file = await getDocumentFile(accessToken, doc.fileId!);
+        let filename = sanitizeArchiveEntryName(
+          doc.filename || file.filename || `${doc.id}.bin`,
+          `${doc.id}.bin`
+        );
         if (usedNames.has(filename)) {
           const ext = filename.lastIndexOf(".");
           const base = ext > 0 ? filename.slice(0, ext) : filename;

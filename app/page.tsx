@@ -40,11 +40,43 @@ function sortDocuments(items: Document[]) {
 
 function escapeCsvValue(value: string | number | null | undefined) {
   if (value === null || value === undefined) return "";
-  const stringValue = String(value);
+  let stringValue = String(value);
+  if (
+    typeof value === "string" &&
+    (/^\s*[=+\-@]/.test(stringValue) || /^[\t\r]/.test(stringValue))
+  ) {
+    stringValue = `'${stringValue}`;
+  }
   if (/["\n,]/.test(stringValue)) {
     return `"${stringValue.replace(/"/g, "\"\"")}"`;
   }
   return stringValue;
+}
+
+function ProgressRing({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      className={`animate-spin ${className}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="3"
+        opacity="0.25"
+      />
+      <path
+        d="M21 12a9 9 0 0 0-9-9"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
 }
 
 export default function Home() {
@@ -71,6 +103,8 @@ export default function Home() {
   const [isUpdatingDocument, setIsUpdatingDocument] = useState(false);
   const [busyDocId, setBusyDocId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [isClearingAll, setIsClearingAll] = useState(false);
   const [editForm, setEditForm] = useState({
     user: "",
     title: "",
@@ -370,48 +404,61 @@ export default function Home() {
     link.remove();
   };
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     if (!filteredDocuments.length) return;
-    const headers = [
-      "User",
-      "Title",
-      "Category",
-      "Date",
-      "Amount",
-      "Reimbursed",
-      "Reimbursed Date",
-      "Notes",
-      "Has File",
-      "Filename"
-    ];
+    if (isExportingCsv) return;
 
-    const rows = filteredDocuments.map((doc) => [
-      escapeCsvValue(doc.user ?? ""),
-      escapeCsvValue(doc.title),
-      escapeCsvValue(doc.category),
-      escapeCsvValue(doc.date),
-      escapeCsvValue(doc.amount),
-      escapeCsvValue(doc.reimbursed ? "Yes" : "No"),
-      escapeCsvValue(doc.reimbursedDate ?? ""),
-      escapeCsvValue(doc.notes),
-      escapeCsvValue(doc.hasFile ? "Yes" : "No"),
-      escapeCsvValue(doc.filename ?? "")
-    ]);
+    setIsExportingCsv(true);
+    try {
+      // Yield to the browser so the ring renders before generating the CSV.
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join(
-      "\n"
-    );
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `hsa-documents-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+      const headers = [
+        "User",
+        "Title",
+        "Category",
+        "Date",
+        "Amount",
+        "Reimbursed",
+        "Reimbursed Date",
+        "Notes",
+        "Has File",
+        "Filename"
+      ];
+
+      const rows = filteredDocuments.map((doc) => [
+        escapeCsvValue(doc.user ?? ""),
+        escapeCsvValue(doc.title),
+        escapeCsvValue(doc.category),
+        escapeCsvValue(doc.date),
+        escapeCsvValue(doc.amount),
+        escapeCsvValue(doc.reimbursed ? "Yes" : "No"),
+        escapeCsvValue(doc.reimbursedDate ?? ""),
+        escapeCsvValue(doc.notes),
+        escapeCsvValue(doc.hasFile ? "Yes" : "No"),
+        escapeCsvValue(doc.filename ?? "")
+      ]);
+
+      const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join(
+        "\n"
+      );
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `hsa-documents-${new Date()
+        .toISOString()
+        .slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to export CSV", error);
+      setActionError("Failed to export CSV. Please try again.");
+    } finally {
+      setIsExportingCsv(false);
+    }
   };
 
   const handleExportDocuments = async () => {
@@ -444,12 +491,14 @@ export default function Home() {
   };
 
   const handleClearAllDocuments = async () => {
+    if (isClearingAll) return;
     const confirmed = window.confirm(
       `Delete all ${documents.length} documents? This cannot be undone.`
     );
     if (!confirmed) return;
 
     setActionError(null);
+    setIsClearingAll(true);
     try {
       // Best-effort delete Drive files first (before clearing metadata)
       const docsWithFiles = documents.filter((d) => d.hasFile && d.fileId);
@@ -475,6 +524,8 @@ export default function Home() {
     } catch (error) {
       console.error("Failed to clear documents", error);
       setActionError("Failed to clear all documents. Please try again.");
+    } finally {
+      setIsClearingAll(false);
     }
   };
 
@@ -605,7 +656,8 @@ export default function Home() {
             <p className="max-w-xl text-sm sm:text-base" style={{ color: "#4b453f" }}>
               Save medical documents now and reimburse yourself whenever you choose.
               Track every expense in a clean dashboard with smart OCR autofill.
-              All files stay securely in your own Google Drive — nothing on our servers.
+              Files are stored in your own Google Drive. We process uploads in transit to run OCR
+              and save metadata, but we do not keep a separate document database.
             </p>
             <AuthButton />
 
@@ -631,7 +683,8 @@ export default function Home() {
                   <p className="text-xs uppercase tracking-[0.2em]">Privacy-first design</p>
                   <p className="mt-2 text-ink">
                     Your documents and files stay in your own Google Drive. You retain full
-                    ownership of your data.
+                    ownership of your data. Uploads are processed in transit so OCR and metadata
+                    updates can run, then persisted back to your Drive.
                   </p>
                   <p className="mt-3 text-xs uppercase tracking-[0.2em]">Where files are stored</p>
                   <p className="mt-2">
@@ -650,7 +703,7 @@ export default function Home() {
                     <p className="font-semibold text-ink">Can I reimburse a bill from years ago?</p>
                     <p className="mt-2">
                       Yes, if the expense happened after your HSA was opened and you kept the
-                      document. There is no time limit.
+                      records needed for an audit. There is no federal reimbursement deadline.
                     </p>
                   </div>
                   <div>
@@ -663,8 +716,9 @@ export default function Home() {
                   <div>
                     <p className="font-semibold text-ink">What if I accidentally use HSA funds on something not qualified?</p>
                     <p className="mt-2">
-                      That amount can be subject to income tax and an additional penalty. Keep
-                      clean records and reimburse correctly.
+                      Before age 65, that withdrawal is generally taxable plus a 20 percent
+                      additional tax. After age 65, non-qualified withdrawals are taxable but not
+                      subject to the 20 percent additional tax.
                     </p>
                   </div>
                 </div>
@@ -829,13 +883,20 @@ export default function Home() {
                       +
                     </button>
                     <button
-                      className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                      className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
                       disabled={queuedFiles.length === 0 || isUploading}
                       onClick={handleUpload}
                     >
-                      {isUploading
-                        ? `Uploading ${uploadTotal} file${uploadTotal === 1 ? "" : "s"}...`
-                        : "Upload"}
+                      {isUploading ? (
+                        <>
+                          <ProgressRing className="h-4 w-4" />
+                          <span>
+                            Uploading {uploadTotal} file{uploadTotal === 1 ? "" : "s"}...
+                          </span>
+                        </>
+                      ) : (
+                        "Upload"
+                      )}
                     </button>
                     <button
                       className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
@@ -860,7 +921,7 @@ export default function Home() {
                   {queuedFiles.length === 0 ? (
                     <div>
                       <p>Drag and drop documents here. Text recognition (OCR) will auto-fill the details.</p>
-                      <p className="mt-1 text-xs text-muted/70">Accepted formats: JPG, JPEG, PNG, PDF</p>
+                      <p className="mt-1 text-xs text-muted/70">Accepted formats: JPG, JPEG, PNG, WebP, PDF</p>
                     </div>
                   ) : (
                     <div className="space-y-2 text-ink">
@@ -902,25 +963,46 @@ export default function Home() {
                       className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm"
                     />
                     <button
-                      className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
+                      className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
                       onClick={handleExportCsv}
-                      disabled={filteredDocuments.length === 0}
+                      disabled={filteredDocuments.length === 0 || isExportingCsv}
                     >
-                      Export CSV
+                      {isExportingCsv ? (
+                        <>
+                          <ProgressRing className="h-4 w-4" />
+                          <span>Exporting CSV...</span>
+                        </>
+                      ) : (
+                        "Export CSV"
+                      )}
                     </button>
                     <button
-                      className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
+                      className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
                       onClick={handleExportDocuments}
                       disabled={isExporting || documents.filter((d) => d.hasFile).length === 0}
                     >
-                      {isExporting ? "Exporting…" : "Export Files"}
+                      {isExporting ? (
+                        <>
+                          <ProgressRing className="h-4 w-4" />
+                          <span>Exporting Files...</span>
+                        </>
+                      ) : (
+                        "Export Files"
+                      )}
                     </button>
                     <button
-                      className="rounded-full border border-coral/30 bg-white px-4 py-2 text-sm font-semibold text-coral disabled:opacity-40"
+                      className="inline-flex items-center gap-2 rounded-full border border-coral/30 bg-white px-4 py-2 text-sm font-semibold text-coral disabled:opacity-40"
                       onClick={handleClearAllDocuments}
-                      disabled={documents.length === 0}
+                      disabled={documents.length === 0 || isClearingAll}
                     >
-                      Clear All
+                      {isClearingAll ? (
+                        <>
+                          <ProgressRing className="h-4 w-4" />
+                          <span>Clearing...</span>
+                        </>
+                      ) : (
+                        "Clear All"
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1035,6 +1117,10 @@ export default function Home() {
                 This guide explains how HSAs work, what qualifies, how reimbursements work, and why
                 many people choose to reimburse later.
               </p>
+              <p className="mt-3 text-xs text-muted">
+                Last updated: February 6, 2026 (U.S. federal guidance). This is educational content,
+                not tax or legal advice.
+              </p>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl bg-base p-4">
@@ -1046,6 +1132,27 @@ export default function Home() {
                   <p className="mt-1 text-lg font-semibold text-ink">$8,750</p>
                 </div>
               </div>
+              <p className="mt-3 text-xs text-muted">
+                Sources:{" "}
+                <a
+                  className="underline hover:no-underline"
+                  href="https://www.irs.gov/irb/2025-21_IRB"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  IRS Revenue Procedure 2025-19
+                </a>
+                {" "}and{" "}
+                <a
+                  className="underline hover:no-underline"
+                  href="https://www.irs.gov/publications/p969"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  IRS Publication 969
+                </a>
+                .
+              </p>
 
               <div className="mt-6 flex flex-wrap gap-2">
                 {ABOUT_HSA_TOC.map((item) => (
@@ -1142,7 +1249,7 @@ export default function Home() {
                   </div>
                   <p>
                     There is no time limit on reimbursements as long as the expense occurred after
-                    your HSA was opened and you have proof such as a document.
+                    your HSA was opened and you keep complete records that can support an IRS audit.
                   </p>
                   <div className="rounded-2xl bg-base p-4 text-ink">
                     This dashboard is built specifically to make this strategy easy to execute and
@@ -1175,6 +1282,10 @@ export default function Home() {
                     <li>Mark the document as reimbursed</li>
                   </ol>
                   <p>You can reimburse next month, next year, or decades later.</p>
+                  <p>
+                    Keep supporting documentation indefinitely: merchant, date of service, amount,
+                    description, and proof the expense was not reimbursed elsewhere.
+                  </p>
                 </section>
 
                 <section id="qualified-expenses" className="space-y-3">
@@ -1206,6 +1317,14 @@ export default function Home() {
                   <p>
                     Using HSA funds for not qualified expenses may trigger taxes and penalties.
                   </p>
+                  <p>
+                    In most cases, non-qualified withdrawals are taxable and have an additional 20
+                    percent tax before age 65. After age 65, they are still taxable but the
+                    additional 20 percent tax no longer applies.
+                  </p>
+                  <p>
+                    State tax treatment can differ from federal rules, so check your state guidance.
+                  </p>
                 </section>
 
                 <section id="documents" className="space-y-3">
@@ -1221,6 +1340,18 @@ export default function Home() {
                     <li>Description of the item or service</li>
                   </ul>
                   <p>Digital copies are acceptable.</p>
+                  <div className="rounded-2xl bg-base p-4 text-sm text-muted">
+                    <p className="text-xs uppercase tracking-[0.2em] text-ink">
+                      Audit checklist
+                    </p>
+                    <ul className="mt-3 list-disc space-y-2 pl-5">
+                      <li>Provider or merchant name</li>
+                      <li>Date of service</li>
+                      <li>Amount paid</li>
+                      <li>Description of service or item</li>
+                      <li>Proof it was not reimbursed by insurance or another account</li>
+                    </ul>
+                  </div>
                   <div className="rounded-2xl bg-base p-4 text-sm text-muted">
                     <p className="text-xs uppercase tracking-[0.2em] text-ink">
                       Good document example
@@ -1257,6 +1388,30 @@ export default function Home() {
                 Learn about how this dashboard works, where your data is stored, and answers to
                 frequently asked questions.
               </p>
+              <p className="mt-3 text-xs text-muted">
+                Last updated: February 6, 2026 (U.S. federal guidance). Educational only.
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                References:{" "}
+                <a
+                  className="underline hover:no-underline"
+                  href="https://www.irs.gov/publications/p969"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  IRS Publication 969
+                </a>
+                {" "}and{" "}
+                <a
+                  className="underline hover:no-underline"
+                  href="https://www.irs.gov/irb/2004-33_IRB"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  IRS Notice 2004-50
+                </a>
+                .
+              </p>
 
               <div className="mt-8 space-y-10 text-sm text-muted">
                 <section className="space-y-3">
@@ -1280,7 +1435,8 @@ export default function Home() {
                     <p className="text-xs uppercase tracking-[0.2em]">Privacy-first design</p>
                     <p className="mt-2">
                       Your documents and files stay in your own Google Drive. You retain full
-                      ownership of your data.
+                      ownership of your data. Uploads are processed in transit for OCR and metadata
+                      updates, then saved back to your Drive.
                     </p>
                     <p className="mt-3 text-xs uppercase tracking-[0.2em]">Where files are stored</p>
                     <p className="mt-2 text-sm text-muted">
@@ -1301,7 +1457,7 @@ export default function Home() {
                       </p>
                       <p className="mt-2 text-sm text-muted">
                         Yes, if the expense happened after your HSA was opened and you kept the
-                        document. There is no time limit.
+                        required records. There is no reimbursement deadline under federal rules.
                       </p>
                     </div>
                     <div>
@@ -1318,10 +1474,24 @@ export default function Home() {
                         What if I accidentally use HSA funds on something not qualified?
                       </p>
                       <p className="mt-2 text-sm text-muted">
-                        That amount can be subject to income tax and an additional penalty. Keep
-                        clean records and reimburse correctly.
+                        Before age 65, non-qualified withdrawals are usually taxable plus a 20
+                        percent additional tax. After age 65, they are taxable but not subject to
+                        the 20 percent additional tax.
                       </p>
                     </div>
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <h3 className="text-lg font-semibold text-ink">What records should I keep?</h3>
+                  <div className="rounded-2xl bg-base p-4">
+                    <ul className="list-disc space-y-2 pl-5 text-sm text-muted">
+                      <li>Provider or merchant</li>
+                      <li>Date of service</li>
+                      <li>Amount paid</li>
+                      <li>Description of service or item</li>
+                      <li>Proof it was not reimbursed elsewhere</li>
+                    </ul>
                   </div>
                 </section>
 

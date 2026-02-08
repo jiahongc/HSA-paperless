@@ -1,5 +1,16 @@
 const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 const MAX_PDF_PAGES = 10;
+const OCR_DEBUG =
+  process.env.OCR_DEBUG === "true" && process.env.NODE_ENV !== "production";
+
+function debugOcr(message: string, details?: Record<string, unknown>) {
+  if (!OCR_DEBUG) return;
+  if (details) {
+    console.debug(`[ocr] ${message}`, details);
+    return;
+  }
+  console.debug(`[ocr] ${message}`);
+}
 
 async function extractPdfPages(buffer: Buffer): Promise<string[]> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -440,12 +451,14 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
   let pageTexts: string[] = [];
 
   if (mimeType === "application/pdf") {
-    console.log("Extracting text from PDF using pdfjs-dist...");
     try {
       pageTexts = await extractPdfPages(buffer);
       fullText = pageTexts.join("\n");
       bestConfidence = fullText ? 1.0 : null;
-      console.log(`PDF text extraction got ${pageTexts.length} pages, ${fullText.length} chars`);
+      debugOcr("Extracted PDF text", {
+        pages: pageTexts.length,
+        charCount: fullText.length
+      });
     } catch (error) {
       console.error("PDF text extraction failed:", error);
       return { title: "", date: "", amount: 0, category: "", confidence: null };
@@ -457,14 +470,11 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
   }
 
   if (!fullText) {
-    console.log("No text detected in document");
+    debugOcr("No text detected");
     return { title: "", date: "", amount: 0, category: "", confidence: null };
   }
 
   const lines = fullText.split("\n").filter((l: string) => l.trim());
-
-  console.log("OCR extracted text length:", fullText.length);
-  console.log("OCR first 500 chars:", fullText.slice(0, 500));
 
   // For multi-page PDFs, run amount extraction per-page and pick the best
   // (keyword proximity works better within a single page)
@@ -494,8 +504,13 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
     category: extractCategory(fullText),
     confidence: normalizeConfidence(bestConfidence)
   };
-
-  console.log("OCR result:", result);
+  debugOcr("OCR complete", {
+    hasTitle: Boolean(result.title),
+    hasDate: Boolean(result.date),
+    amount: result.amount,
+    category: result.category,
+    confidence: result.confidence
+  });
 
   return result;
 }

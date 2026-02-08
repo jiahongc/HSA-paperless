@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../../../lib/auth";
-import { readModifyWriteDocuments, uploadDocumentFile } from "../../../../lib/drive";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  deleteDocumentFile,
+  readModifyWriteDocuments,
+  uploadDocumentFile
+} from "../../../../lib/drive";
 import { isAuthError } from "../../../../lib/errors";
 import { runOcr } from "../../../../lib/ocr";
+import { getRequestAuth } from "../../../../lib/server-auth";
 import type { Document } from "../../../../types/documents";
 
 function toMonthFolder(date: Date) {
@@ -49,9 +52,25 @@ function deduplicateFilename(name: string, usedNames: Set<string>): string {
   }
 }
 
-export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+async function rollbackUploads(accessToken: string, entries: Document[]) {
+  const fileIds = entries
+    .map((entry) => entry.fileId)
+    .filter((fileId): fileId is string => Boolean(fileId));
+
+  await Promise.allSettled(
+    fileIds.map(async (fileId) => {
+      try {
+        await deleteDocumentFile(accessToken, fileId);
+      } catch (error) {
+        console.error("Rollback failed for file", fileId, error);
+      }
+    })
+  );
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await getRequestAuth(request);
+  if (!auth?.accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -72,15 +91,18 @@ export async function POST(request: Request) {
     const mime = file.type.toLowerCase();
     if (!ALLOWED_TYPES.has(mime)) {
       return NextResponse.json(
-        { error: `File "${file.name}" has unsupported type "${file.type}". Accepted: JPG, PNG, WebP, PDF` },
+        {
+          error: `File "${file.name}" has unsupported type "${file.type}". Accepted: JPG, PNG, WebP, PDF`
+        },
         { status: 400 }
       );
     }
   }
 
-  try {
-    const createdEntries: Document[] = [];
+  const createdEntries: Document[] = [];
+  let metadataCommitted = false;
 
+  try {
     // Process files and upload to Drive before acquiring the write lock
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer();
@@ -88,7 +110,13 @@ export async function POST(request: Request) {
       const now = new Date();
       const dateValue = now.toISOString().slice(0, 10);
 
-      let ocr = { title: "", date: "", amount: 0, category: "", confidence: null as number | null };
+      let ocr = {
+        title: "",
+        date: "",
+        amount: 0,
+        category: "",
+        confidence: null as number | null
+      };
       try {
         ocr = await runOcr(buffer, file.type || "application/octet-stream");
       } catch (error) {
@@ -96,9 +124,9 @@ export async function POST(request: Request) {
       }
 
       const title = ocr.title || titleFromFilename(file.name);
-      const docDate = ocr.date || dateValue;
+      const docDate = /^\d{4}-\d{2}-\d{2}$/.test(ocr.date) ? ocr.date : dateValue;
 
-      const upload = await uploadDocumentFile(session.accessToken, {
+      const upload = await uploadDocumentFile(auth.accessToken, {
         filename: file.name,
         mimeType: file.type || "application/octet-stream",
         buffer,
@@ -110,11 +138,11 @@ export async function POST(request: Request) {
         fileId: upload.fileId,
         filename: upload.filename,
         hasFile: true,
-        user: getFirstName(session.user?.name),
+        user: getFirstName(auth.name),
         title,
         category: ocr.category,
         date: docDate,
-        amount: ocr.amount,
+        amount: Number.isFinite(ocr.amount) && ocr.amount >= 0 ? ocr.amount : 0,
         notes: "",
         reimbursed: false,
         reimbursedDate: null,
@@ -124,7 +152,7 @@ export async function POST(request: Request) {
     }
 
     // Use the write lock to safely append new entries to documents.json
-    await readModifyWriteDocuments(session.accessToken, (data) => {
+    await readModifyWriteDocuments(auth.accessToken, (data) => {
       const usedNames = new Set(
         data.documents.map((doc) => doc.filename).filter(Boolean) as string[]
       );
@@ -135,9 +163,14 @@ export async function POST(request: Request) {
         data.documents.push(entry);
       }
     });
+    metadataCommitted = true;
 
     return NextResponse.json({ entries: createdEntries });
   } catch (error) {
+    if (!metadataCommitted && createdEntries.length > 0) {
+      await rollbackUploads(auth.accessToken, createdEntries);
+    }
+
     if (isAuthError(error)) {
       return NextResponse.json({ error: "InvalidCredentials" }, { status: 401 });
     }

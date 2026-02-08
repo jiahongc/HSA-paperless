@@ -3,6 +3,7 @@ import type { JWT } from "next-auth/jwt";
 import GoogleProvider from "next-auth/providers/google";
 
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+const ACCESS_TOKEN_EXPIRY_BUFFER_SECONDS = 60;
 
 // Guard against concurrent token refreshes: one in-flight refresh per user
 const refreshPromises = new Map<string, Promise<JWT>>();
@@ -16,6 +17,26 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
   });
   refreshPromises.set(key, promise);
   return promise;
+}
+
+function isAccessTokenFresh(token: JWT) {
+  return Boolean(
+    token.accessToken &&
+      token.expiresAt &&
+      Date.now() / 1000 < token.expiresAt - ACCESS_TOKEN_EXPIRY_BUFFER_SECONDS
+  );
+}
+
+export async function ensureFreshAccessToken(token: JWT): Promise<JWT> {
+  if (!token.accessToken) {
+    return { ...token, error: "MissingAccessToken" };
+  }
+
+  if (isAccessTokenFresh(token)) {
+    return token;
+  }
+
+  return refreshAccessToken(token);
 }
 
 async function doRefreshAccessToken(token: JWT) {
@@ -81,14 +102,9 @@ export const authOptions: NextAuthOptions = {
         };
       }
 
-      if (token.expiresAt && Date.now() / 1000 < token.expiresAt - 60) {
-        return token;
-      }
-
-      return refreshAccessToken(token);
+      return ensureFreshAccessToken(token);
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken;
       session.error = token.error;
       return session;
     }

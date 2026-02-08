@@ -3,7 +3,6 @@ import type { DefaultJWT } from "next-auth/jwt";
 
 declare module "next-auth" {
   interface Session {
-    accessToken?: string;
     error?: string;
     user?: DefaultSession["user"];
   }

@@ -85,13 +85,13 @@ GOOGLE_VISION_API_KEY=...
 See [SETUP.md](SETUP.md) for detailed Google Cloud configuration.
 
 ## Privacy & Security
-- Document files never touch our servers.
-- Metadata lives only in the user's Drive.
+- Document files are processed transiently by API routes for OCR/upload, then stored in the user's Drive.
+- Metadata is processed in API routes and persisted in the user's Drive `documents.json`.
 - Files are stored in a hidden app data folder only this app can access.
 - Users can revoke access at any time.
 - Upload validation enforces file type (JPG, PNG, WebP, PDF) and size (10 MB) limits.
 - File preview restricted to safe MIME types with `X-Content-Type-Options: nosniff`.
-- Per-user write lock (SHA-256 hashed key) prevents concurrent metadata corruption.
+- Per-user in-process write lock plus Drive ETag preconditions reduce concurrent metadata overwrite risk.
 - Per-user token refresh guard prevents cross-contamination between sessions.
 - Loading states on destructive actions prevent double-click issues.
 - Modals use `role="dialog"` and `aria-modal` for accessibility.

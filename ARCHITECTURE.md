@@ -1,11 +1,11 @@
 # Architecture & Technical Plan
 
-This document outlines the system design, data model, and implementation plan for **HSA Paperless** with zero server-side storage of user documents or metadata.
+This document outlines the system design, data model, and implementation plan for **HSA Paperless** with no separate server-side document/metadata database.
 
 ## Goals
 - End users only sign in with Google and start using the app.
 - Document files and metadata are stored **only** in the user's Google Drive `appDataFolder`.
-- No server-side storage of documents or metadata.
+- No separate server-side database for documents or metadata.
 - Fast dashboard load from a single metadata JSON file.
 - Clean, modern UI with dashboard and education tabs.
 
