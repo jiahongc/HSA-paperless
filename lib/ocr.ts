@@ -1,4 +1,5 @@
 const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
+const FILES_API_URL = "https://vision.googleapis.com/v1/files:annotate";
 const MAX_PDF_PAGES = 10;
 const OCR_DEBUG =
   process.env.OCR_DEBUG === "true" && process.env.NODE_ENV !== "production";
@@ -433,6 +434,65 @@ async function ocrImage(apiKey: string, imageBuffer: Buffer): Promise<{ text: st
   return { text: annotation.text, confidence: pageConfidence };
 }
 
+async function ocrPdf(apiKey: string, pdfBuffer: Buffer): Promise<{ text: string; confidence: number | null }> {
+  const base64 = pdfBuffer.toString("base64");
+
+  const body = {
+    requests: [
+      {
+        inputConfig: {
+          content: base64,
+          mimeType: "application/pdf"
+        },
+        features: [
+          { type: "DOCUMENT_TEXT_DETECTION" }
+        ],
+        pages: [1, 2, 3, 4, 5]
+      }
+    ]
+  };
+
+  const response = await fetch(FILES_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Vision files:annotate error:", response.status, errorText);
+    return { text: "", confidence: null };
+  }
+
+  const data = await response.json();
+
+  if (data.responses?.[0]?.error) {
+    console.error("Vision files:annotate returned error:", data.responses[0].error);
+    return { text: "", confidence: null };
+  }
+
+  const fileResponse = data.responses?.[0];
+  const pages = fileResponse?.responses ?? [];
+  const texts: string[] = [];
+  let bestConf: number | null = null;
+
+  for (const page of pages) {
+    const annotation = page?.fullTextAnnotation;
+    if (annotation?.text) {
+      texts.push(annotation.text);
+      const pageConf = annotation.pages?.[0]?.confidence ?? null;
+      if (typeof pageConf === "number" && (bestConf === null || pageConf < bestConf)) {
+        bestConf = pageConf;
+      }
+    }
+  }
+
+  return { text: texts.join("\n"), confidence: bestConf };
+}
+
 function normalizeConfidence(raw: number | null): number | null {
   if (typeof raw !== "number") return null;
   const clamped = raw > 1 ? raw / 100 : raw;
@@ -465,8 +525,8 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
 
     // Fall back to Vision API for scanned/image-based PDFs
     if (!fullText && apiKey) {
-      debugOcr("No embedded text in PDF, falling back to Vision API");
-      const result = await ocrImage(apiKey, buffer);
+      debugOcr("No embedded text in PDF, falling back to Vision API files:annotate");
+      const result = await ocrPdf(apiKey, buffer);
       fullText = result.text;
       bestConfidence = result.confidence;
     }
