@@ -434,7 +434,7 @@ async function ocrImage(apiKey: string, imageBuffer: Buffer): Promise<{ text: st
   return { text: annotation.text, confidence: pageConfidence };
 }
 
-async function ocrPdf(apiKey: string, pdfBuffer: Buffer): Promise<{ text: string; confidence: number | null }> {
+async function ocrPdf(apiKey: string, pdfBuffer: Buffer): Promise<{ text: string; pages: string[]; confidence: number | null }> {
   const base64 = pdfBuffer.toString("base64");
 
   const body = {
@@ -464,14 +464,14 @@ async function ocrPdf(apiKey: string, pdfBuffer: Buffer): Promise<{ text: string
   if (!response.ok) {
     const errorText = await response.text();
     console.error("Vision files:annotate error:", response.status, errorText);
-    return { text: "", confidence: null };
+    return { text: "", pages: [], confidence: null };
   }
 
   const data = await response.json();
 
   if (data.responses?.[0]?.error) {
     console.error("Vision files:annotate returned error:", data.responses[0].error);
-    return { text: "", confidence: null };
+    return { text: "", pages: [], confidence: null };
   }
 
   const fileResponse = data.responses?.[0];
@@ -490,7 +490,7 @@ async function ocrPdf(apiKey: string, pdfBuffer: Buffer): Promise<{ text: string
     }
   }
 
-  return { text: texts.join("\n"), confidence: bestConf };
+  return { text: texts.join("\n"), pages: texts, confidence: bestConf };
 }
 
 function normalizeConfidence(raw: number | null): number | null {
@@ -528,6 +528,7 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
       debugOcr("No embedded text in PDF, falling back to Vision API files:annotate");
       const result = await ocrPdf(apiKey, buffer);
       fullText = result.text;
+      pageTexts = result.pages;
       bestConfidence = result.confidence;
     }
   } else {
