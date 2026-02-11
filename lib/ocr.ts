@@ -461,7 +461,14 @@ export async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrResul
       });
     } catch (error) {
       console.error("PDF text extraction failed:", error);
-      return { title: "", date: "", amount: 0, category: "", confidence: null };
+    }
+
+    // Fall back to Vision API for scanned/image-based PDFs
+    if (!fullText && apiKey) {
+      debugOcr("No embedded text in PDF, falling back to Vision API");
+      const result = await ocrImage(apiKey, buffer);
+      fullText = result.text;
+      bestConfidence = result.confidence;
     }
   } else {
     const result = await ocrImage(apiKey, buffer);

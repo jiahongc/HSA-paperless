@@ -617,14 +617,50 @@ export default function Home() {
     return Array.from(years).sort().reverse();
   }, [documents]);
 
-  const previewUrl = useMemo(
-    () => selectedDocument?.hasFile ? `/api/documents/file/${selectedDocument.id}` : "",
-    [selectedDocument?.hasFile, selectedDocument?.id]
-  );
   const isPreviewPdf = useMemo(
     () => selectedDocument?.filename?.toLowerCase().endsWith(".pdf") ?? false,
     [selectedDocument?.filename]
   );
+
+  const [previewBlobUrl, setPreviewBlobUrl] = useState("");
+  useEffect(() => {
+    if (!selectedDocument?.hasFile || !selectedDocument.id) {
+      setPreviewBlobUrl("");
+      return;
+    }
+
+    let revoked = false;
+    const url = `/api/documents/file/${selectedDocument.id}`;
+
+    if (!isPreviewPdf) {
+      // Images can load directly — no X-Frame-Options issue
+      setPreviewBlobUrl(url);
+      return;
+    }
+
+    // For PDFs, fetch as blob to bypass X-Frame-Options: DENY
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        if (revoked) return;
+        const blobUrl = URL.createObjectURL(blob);
+        setPreviewBlobUrl(blobUrl);
+      })
+      .catch(() => setPreviewBlobUrl(""));
+
+    return () => {
+      revoked = true;
+      setPreviewBlobUrl((prev) => {
+        if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return "";
+      });
+    };
+  }, [selectedDocument?.hasFile, selectedDocument?.id, isPreviewPdf]);
+
+  const previewUrl = previewBlobUrl;
 
   if (status === "loading") {
     return (
